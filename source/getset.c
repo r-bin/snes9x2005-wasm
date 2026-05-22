@@ -3,6 +3,7 @@
 #include "ppu.h"
 #include "dsp1.h"
 #include "cpuexec.h"
+#include "debugger.h"
 #include "sa1.h"
 #include "spc7110.h"
 #include "obc1.h"
@@ -151,6 +152,10 @@ void S9xSetByte(uint8_t Byte, uint32_t Address)
          SA1.WaitCounter = 0;
       }
       *SetAddress = Byte;
+      /* WRAM write watchpoint — only tested when at least one watchpoint is set */
+      if (__builtin_expect(dbg.hasWriteBP, 0) &&
+          SetAddress >= Memory.RAM && SetAddress < Memory.RAM + 0x20000)
+         DBG_CheckWriteBreakpoint((uint32_t)(SetAddress - Memory.RAM), Byte);
       return;
    }
 

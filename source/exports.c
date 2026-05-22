@@ -3,6 +3,7 @@
 #include "display.h"
 #include "snes9x.h"
 #include "cpuexec.h"
+#include "debugger.h"
 #include "apu.h"
 #include "apu_blargg.h"
 #include "soundux.h"
@@ -199,6 +200,7 @@ void startWithRom(unsigned char *rom, unsigned int romLength, unsigned int sampl
 EMSCRIPTEN_KEEPALIVE
 void mainLoop(){
     if(!runGameFlag)return;
+    if(dbg.paused)return;  /* debugger paused — skip frame advancement */
     S9xMainLoop();//1フレーム分実行される?
     S9xUpdateScreen();
     #ifndef USE_BLARGG_APU

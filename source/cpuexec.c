@@ -3,6 +3,7 @@
 #include "snes9x.h"
 #include "memmap.h"
 #include "cpuops.h"
+#include "debugger.h"
 #include "ppu.h"
 #include "cpuexec.h"
 #include "gfx.h"
@@ -28,6 +29,9 @@ void S9xMainLoop_NoSA1_NoSFX(void);
  */
 void S9xMainLoop()
 {
+   /* Debugger: stay paused — caller's RAF loop should not advance frames */
+   if (dbg.paused) return;
+
    if (Settings.SA1)
    {
       if (Settings.SuperFX)
@@ -94,6 +98,7 @@ void S9xMainLoop_SA1_SFX()
          }
 
          CPU.PCAtOpcodeStart = CPU.PC;
+         DBG_CheckExecBreakpoint();
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
 
@@ -182,6 +187,7 @@ void S9xMainLoop_SA1_NoSFX()
          }
 
          CPU.PCAtOpcodeStart = CPU.PC;
+         DBG_CheckExecBreakpoint();
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
 
@@ -270,6 +276,7 @@ void S9xMainLoop_NoSA1_SFX()
          }
 
          CPU.PCAtOpcodeStart = CPU.PC;
+         DBG_CheckExecBreakpoint();
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
          DO_HBLANK_CHECK_SFX();
@@ -355,6 +362,7 @@ void S9xMainLoop_NoSA1_NoSFX()
          }
 
          CPU.PCAtOpcodeStart = CPU.PC;
+         DBG_CheckExecBreakpoint();
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
          DO_HBLANK_CHECK_NoSFX();
