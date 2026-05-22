@@ -1,0 +1,16 @@
+# Build outputs
+snes9x_2005.js
+snes9x_2005.wasm
+
+# Existing ignore rules from gitignore.txt
+*.o
+*.plg
+*.elf
+*.dat
+*.zip
+*~
+depend
+[Tt]humbs.db
+expsfc.*
+EXPSFC/
+*.so
