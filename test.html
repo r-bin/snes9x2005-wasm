@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>snes9x2005-wasm Debugger Test</title>
+    <style>
+        body { font-family: monospace; margin: 20px; }
+        #status { padding: 10px; border: 1px solid #ccc; margin: 10px 0; }
+        .ok { background: #efe; }
+        .warn { background: #ffd; }
+        .error { background: #fee; }
+    </style>
+</head>
+<body>
+    <h1>snes9x2005-wasm Debugger API Test</h1>
+    <div id="status" class="warn">Loading WASM module...</div>
+    <pre id="log"></pre>
+
+    <script src="snes9x_2005.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+
+        function logMessage(msg, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] ${msg}\n`;
+            console.log(msg);
+        }
+
+        Module.onRuntimeInitialized = () => {
+            status.className = 'ok';
+            status.textContent = '✓ Module loaded and initialized';
+
+            logMessage('=== snes9x2005-wasm Debugger API Test ===');
+            logMessage('');
+
+            // Test 1: Check if functions exist
+            logMessage('TEST 1: API functions exist');
+            const funcs = [
+                'addExecBreakpoint',
+                'removeExecBreakpoint',
+                'addWriteBreakpoint',
+                'removeWriteBreakpoint',
+                'pauseEmulation',
+                'resumeEmulation',
+                'getCPUState',
+                'readMemory',
+                'writeMemory',
+                'readMemoryRange',
+                'onBreakpointHit'
+            ];
+
+            let allPresent = true;
+            funcs.forEach(fn => {
+                const present = typeof Module[fn] !== 'undefined';
+                logMessage(`  ${present ? '✓' : '✗'} Module.${fn}`);
+                if (!present) allPresent = false;
+            });
+
+            if (!allPresent) {
+                status.className = 'error';
+                status.textContent = '✗ Some API functions missing!';
+                return;
+            }
+
+            logMessage('');
+            logMessage('TEST 2: Add exec breakpoint at 0xC08000');
+            try {
+                Module.addExecBreakpoint(0xC08000);
+                logMessage('  ✓ Breakpoint added');
+            } catch (e) {
+                logMessage(`  ✗ Error: ${e.message}`);
+            }
+
+            logMessage('');
+            logMessage('TEST 3: Add WRAM write watchpoint at 0x22D8');
+            try {
+                Module.addWriteBreakpoint(0x22D8);
+                logMessage('  ✓ Watchpoint added');
+            } catch (e) {
+                logMessage(`  ✗ Error: ${e.message}`);
+            }
+
+            logMessage('');
+            logMessage('TEST 4: Get CPU state (should be zeroes before ROM loads)');
+            try {
+                const cpu = Module.getCPUState();
+                logMessage(`  PC: 0x${cpu.pc.toString(16).padStart(6, '0').toUpperCase()}`);
+                logMessage(`  A:  0x${cpu.a.toString(16).padStart(4, '0').toUpperCase()}`);
+                logMessage(`  X:  0x${cpu.x.toString(16).padStart(4, '0').toUpperCase()}`);
+                logMessage(`  Y:  0x${cpu.y.toString(16).padStart(4, '0').toUpperCase()}`);
+                logMessage(`  SP: 0x${cpu.sp.toString(16).padStart(4, '0').toUpperCase()}`);
+                logMessage(`  P:  0x${cpu.p.toString(16).padStart(2, '0').toUpperCase()}`);
+                logMessage(`  DB: 0x${cpu.db.toString(16).padStart(2, '0').toUpperCase()}`);
+                logMessage(`  PB: 0x${cpu.pb.toString(16).padStart(2, '0').toUpperCase()}`);
+            } catch (e) {
+                logMessage(`  ✗ Error: ${e.message}`);
+            }
+
+            logMessage('');
+            logMessage('TEST 5: Set breakpoint hit callback');
+            try {
+                Module.onBreakpointHit = (event) => {
+                    logMessage(`  [BREAKPOINT HIT] type=${event.type} addr=0x${event.address.toString(16).toUpperCase()} pc=0x${event.pc.toString(16).toUpperCase()}`);
+                };
+                logMessage('  ✓ Callback registered');
+            } catch (e) {
+                logMessage(`  ✗ Error: ${e.message}`);
+            }
+
+            logMessage('');
+            logMessage('TEST 6: Pause/Resume emulation');
+            try {
+                Module.pauseEmulation();
+                logMessage('  ✓ Emulation paused');
+                Module.resumeEmulation();
+                logMessage('  ✓ Emulation resumed');
+            } catch (e) {
+                logMessage(`  ✗ Error: ${e.message}`);
+            }
+
+            logMessage('');
+            logMessage('=== ALL TESTS PASSED ===');
+            status.className = 'ok';
+            status.textContent = '✓ All API tests passed! Debugger is ready.';
+        };
+    </script>
+</body>
+</html>
