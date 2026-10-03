@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+#define SOUND_BUFFER_SAMPLES 16384
 int joyPadInput = 0;
 int joyPadInput2 = 0;
 bool runGameFlag = false;
@@ -27,7 +28,7 @@ unsigned char *sramDest;
 int16_t *mixSamplesBuffer = NULL;
 unsigned int mixSamplesCount = 0;
 int16_t *outToExternalBuffer = NULL;
-unsigned int outToExternalBufferSamplePos = 2048;
+unsigned int outToExternalBufferSamplePos = 0;
 unsigned int soundBufferOutPos = 0;
 unsigned int soundBufferStuckCount = 0;
 
@@ -99,25 +100,18 @@ void S9xSoundCallback(void){
 }
 #else
 void S9xSoundCallback(void){
-    //printf("outToExternalBufferSamplePos = %d\n", outToExternalBufferSamplePos);
-    if(!outToExternalBuffer)outToExternalBuffer = (int16_t*)calloc(4096 * 2, sizeof(int16_t));
-    unsigned int available_samples = 600;
+    if(!outToExternalBuffer) outToExternalBuffer = (int16_t*)calloc(SOUND_BUFFER_SAMPLES * 2, sizeof(int16_t));
+    unsigned int available_samples = Settings.SoundPlaybackRate ? (Settings.SoundPlaybackRate / 60) : 735;
     if(available_samples > mixSamplesCount){
         mixSamplesCount = available_samples;
-        if(mixSamplesBuffer)free(mixSamplesBuffer);
+        if(mixSamplesBuffer) free(mixSamplesBuffer);
         mixSamplesBuffer = (int16_t*)calloc(mixSamplesCount * 2, sizeof(int16_t));
     }
     S9xMixSamples(mixSamplesBuffer, available_samples * 2);
-    unsigned int nextPos = (outToExternalBufferSamplePos + available_samples) % 4096;
-    if(soundBufferOutPos >= 2048){
-        if(outToExternalBufferSamplePos <= 2048 && nextPos >= 2048)return;
-    }else{
-        if(outToExternalBufferSamplePos > 2048 && nextPos <= 2048)return;
+    for(unsigned int i = 0; i < available_samples * 2; i++){
+        outToExternalBuffer[(outToExternalBufferSamplePos * 2 + i) % (SOUND_BUFFER_SAMPLES * 2)] = mixSamplesBuffer[i];
     }
-    for(unsigned int i = 0;i < available_samples * 2; i++){
-        outToExternalBuffer[(outToExternalBufferSamplePos * 2 + i) % 8192] = mixSamplesBuffer[i];
-    }
-    outToExternalBufferSamplePos = (outToExternalBufferSamplePos + available_samples) % 4096;
+    outToExternalBufferSamplePos = (outToExternalBufferSamplePos + available_samples) % SOUND_BUFFER_SAMPLES;
 }
 #endif
 
@@ -178,7 +172,7 @@ void startWithRom(unsigned char *rom, unsigned int romLength, unsigned int sampl
     S9xInitSound(0, 0);//初期設定?
     #else
     S9xInitSound();
-    S9xSetPlaybackRate(36000);
+    S9xSetPlaybackRate(sampleRate ? sampleRate : 44100);
     #endif
     #ifdef USE_BLARGG_APU
     S9xSetSamplesAvailableCallback(S9xSoundCallback);
@@ -212,85 +206,80 @@ EMSCRIPTEN_KEEPALIVE
 uint8_t *getScreenBuffer(void){
     if(!rgba8ScreenBuffer)rgba8ScreenBuffer = my_malloc(512 * 448 * 4);
     if(!runGameFlag || !GFX.Screen)return rgba8ScreenBuffer;
-    for(unsigned int i = 0;i < 512 * 448;i++){
-        unsigned short col;
-        memcpy(&col, GFX.Screen + 2 * i, 2);
-        unsigned char r = ((col >> 11) & 0x1F) << 3;
-        unsigned char g = ((col >> 5) & 0x3F) << 2;
-        unsigned char b = ((col >> 0) & 0x1F) << 3;
-        rgba8ScreenBuffer[i * 4 + 0] = r;
-        rgba8ScreenBuffer[i * 4 + 1] = g;
-        rgba8ScreenBuffer[i * 4 + 2] = b;
-        rgba8ScreenBuffer[i * 4 + 3] = 0xFF;
+
+    if (IPPU.RenderedScreenWidth <= 256) {
+        // Standard SNES 256x224: GFX.Pitch2 = 512 words. Scale 2x so it fills 512x448 cleanly!
+        for(unsigned int y = 0; y < 224; y++){
+            uint16_t *srcLine = (uint16_t*)GFX.Screen + y * 512;
+            uint32_t *dst0 = (uint32_t*)rgba8ScreenBuffer + (y * 2) * 512;
+            uint32_t *dst1 = (uint32_t*)rgba8ScreenBuffer + (y * 2 + 1) * 512;
+            for(unsigned int x = 0; x < 256; x++){
+                uint16_t col = srcLine[x];
+                uint8_t r = ((col >> 11) & 0x1F) << 3;
+                uint8_t g = ((col >> 5) & 0x3F) << 2;
+                uint8_t b = ((col >> 0) & 0x1F) << 3;
+                uint32_t pixel = (0xFF << 24) | (b << 16) | (g << 8) | r;
+                dst0[x * 2]     = pixel;
+                dst0[x * 2 + 1] = pixel;
+                dst1[x * 2]     = pixel;
+                dst1[x * 2 + 1] = pixel;
+            }
+        }
+    } else {
+        // Hi-res mode (512x448)
+        for(unsigned int y = 0; y < 448; y++){
+            uint16_t *srcLine = (uint16_t*)GFX.Screen + y * 512;
+            uint32_t *dst = (uint32_t*)rgba8ScreenBuffer + y * 512;
+            for(unsigned int x = 0; x < 512; x++){
+                uint16_t col = srcLine[x];
+                uint8_t r = ((col >> 11) & 0x1F) << 3;
+                uint8_t g = ((col >> 5) & 0x3F) << 2;
+                uint8_t b = ((col >> 0) & 0x1F) << 3;
+                dst[x] = (0xFF << 24) | (b << 16) | (g << 8) | r;
+            }
+        }
     }
     return rgba8ScreenBuffer;
 }
 
-/*EMSCRIPTEN_KEEPALIVE
-float *getSoundBuffer(){
-    printf("outToExternalBufferIndex = %d\n", outToExternalBufferIndex);
-    if(!outToExternalBuffer)outToExternalBuffer = (int16_t*)calloc(4096 * 2, sizeof(int16_t));
-    if(!f32soundBuffer)f32soundBuffer = (float*)calloc(2048 * 2, sizeof(float));
-    if(outToExternalBufferIndex == 0){
-        if(outToExternalBufferSamplePos < 2048)return f32soundBuffer;
-    }else{
-        if(outToExternalBufferSamplePos >= 2048)return f32soundBuffer;
-    }
-    for(unsigned int i = 0;i < 2048;i++){
-        for(unsigned int j = 0;j < 2;j++)f32soundBuffer[j * 2048 + i] = outToExternalBuffer[outToExternalBufferIndex * 4096 + 2 * i + j] / ((float)(0x8000));
-    }
-    if(outToExternalBufferIndex == 0){
-        outToExternalBufferIndex = 1;
-    }else{
-        outToExternalBufferIndex = 0;
-    }
-    return f32soundBuffer;
-}*/
-
-/*EMSCRIPTEN_KEEPALIVE
-float *getSoundBuffer(){
-    if(!outToExternalBuffer)outToExternalBuffer = (int16_t*)calloc(4096 * 2, sizeof(int16_t));
-    if(!f32soundBuffer)f32soundBuffer = (float*)calloc(2048 * 2, sizeof(float));
-    unsigned int soundBufferInPos = outToExternalBufferSamplePos;
-    if(outToExternalBufferSamplePos < soundBufferOutPos)soundBufferInPos += 4096;
-    if(soundBufferOutPos + 2048 > soundBufferInPos)return f32soundBuffer;
-    soundBufferOutPos += 2048;
-    for(unsigned int i = 0;i < 2048;i++){
-        for(unsigned int j = 0;j < 2;j++)f32soundBuffer[j * 2048 + i] = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2 + j) % 8192] / ((float)(0x8000));
-    }
-    return f32soundBuffer;
-}*/
-
 void resetSoundBuffer(){
     soundBufferOutPos = 0;
     outToExternalBufferSamplePos = 0;
-    memset(outToExternalBuffer, 0, 4096 * 2 * sizeof(int16_t));
-    return;
+    if(outToExternalBuffer) memset(outToExternalBuffer, 0, SOUND_BUFFER_SAMPLES * 2 * sizeof(int16_t));
 }
 
 EMSCRIPTEN_KEEPALIVE
 float *getSoundBuffer(){
-    if(soundBufferStuckCount >= 5){//応急処置
-        printf("soundbuffer stuck!!\n");
-        printf("outToExternalBufferSamplePos = %d\n", outToExternalBufferSamplePos);
-        printf("soundBufferOutPos = %d\n", soundBufferOutPos);
-        soundBufferStuckCount = 0;
-        resetSoundBuffer();
+    if(!outToExternalBuffer) outToExternalBuffer = (int16_t*)calloc(SOUND_BUFFER_SAMPLES * 2, sizeof(int16_t));
+    if(!f32soundBuffer) f32soundBuffer = (float*)calloc(2048 * 2, sizeof(float));
+
+    int buffered = (int)outToExternalBufferSamplePos - (int)soundBufferOutPos;
+    if(buffered < 0) buffered += SOUND_BUFFER_SAMPLES;
+
+    if(buffered < 2048){
+        for(unsigned int i = 0; i < (unsigned int)buffered; i++){
+            f32soundBuffer[i]        = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2)     % (SOUND_BUFFER_SAMPLES * 2)] / 32768.0f;
+            f32soundBuffer[2048 + i] = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2 + 1) % (SOUND_BUFFER_SAMPLES * 2)] / 32768.0f;
+        }
+        for(unsigned int i = (unsigned int)buffered; i < 2048; i++){
+            f32soundBuffer[i]        = 0.0f;
+            f32soundBuffer[2048 + i] = 0.0f;
+        }
+        soundBufferOutPos = (soundBufferOutPos + (unsigned int)buffered) % SOUND_BUFFER_SAMPLES;
+        return f32soundBuffer;
     }
-    soundBufferStuckCount++;
-    //printf("soundBufferOutPos = %d\n", soundBufferOutPos);
-    if(!outToExternalBuffer)outToExternalBuffer = (int16_t*)calloc(4096 * 2, sizeof(int16_t));
-    if(!f32soundBuffer)f32soundBuffer = (float*)calloc(2048 * 2, sizeof(float));
-    if(soundBufferOutPos < 2048){
-        if(outToExternalBufferSamplePos < 2048)return f32soundBuffer;//getSoundBufferが呼ばれすぎてS9xSoundCallbackによって生成された音声データに追いついた
-    }else{
-        if(outToExternalBufferSamplePos >= 2048)return f32soundBuffer;//getSoundBufferが呼ばれすぎてS9xSoundCallbackによって生成された音声データに追いついた
+
+    for(unsigned int i = 0; i < 2048; i++){
+        f32soundBuffer[i]        = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2)     % (SOUND_BUFFER_SAMPLES * 2)] / 32768.0f;
+        f32soundBuffer[2048 + i] = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2 + 1) % (SOUND_BUFFER_SAMPLES * 2)] / 32768.0f;
     }
-    for(unsigned int i = 0;i < 2048;i++){
-        for(unsigned int j = 0;j < 2;j++)f32soundBuffer[j * 2048 + i] = outToExternalBuffer[(soundBufferOutPos * 2 + i * 2 + j) % 8192] / ((float)(0x8000));
+    soundBufferOutPos = (soundBufferOutPos + 2048) % SOUND_BUFFER_SAMPLES;
+
+    buffered -= 2048;
+    if(buffered > 6144){
+        soundBufferOutPos = (soundBufferOutPos + (buffered - 2048)) % SOUND_BUFFER_SAMPLES;
     }
-    soundBufferOutPos = (soundBufferOutPos + 2048) % 4096;
-    soundBufferStuckCount = 0;
+
     return f32soundBuffer;
 }
 
