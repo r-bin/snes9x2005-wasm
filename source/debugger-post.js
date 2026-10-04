@@ -49,6 +49,8 @@
     Module['resumeEmulation']      = function ()      { Module._resumeEmulation();                 };
     Module['readMemory']           = function (addr)  { return Module._readMemory(addr >>> 0);     };
     Module['writeMemory']          = function (addr, v){ Module._writeMemory(addr >>> 0, v & 0xFF);};
+    Module['writeRomByte']         = function (off, v) { Module._writeRomByte(off >>> 0, v & 0xFF); };
+    Module['readRomByte']          = function (off)    { return Module._readRomByte(off >>> 0);     };
 
     /**
      * onBreakpointHit — set this to receive breakpoint events:

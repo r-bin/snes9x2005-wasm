@@ -214,3 +214,18 @@ uint8_t* readMemoryRange(uint32_t addr, uint32_t size)
         readBuf[i] = S9xGetByte(addr + i);
     return readBuf;
 }
+
+EMSCRIPTEN_KEEPALIVE
+void writeRomByte(uint32_t offset, uint8_t value)
+{
+    if (Memory.ROM && offset < MAX_ROM_SIZE)
+        Memory.ROM[offset] = value;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t readRomByte(uint32_t offset)
+{
+    if (Memory.ROM && offset < MAX_ROM_SIZE)
+        return Memory.ROM[offset];
+    return 0;
+}
