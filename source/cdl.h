@@ -54,6 +54,15 @@
 #define XR_DMA_VRAM  0x40
 #define XR_DMA_CGRAM 0x80
 
+/* wflags: 1 byte per WRAM byte (cdl-wram.c) */
+#define WF_READ    0x01
+#define WF_WRITE   0x02
+#define WF_BYTE    0x04
+#define WF_WORD    0x08
+#define WF_EXEC    0x10
+#define WF_SCRIPT  0x20
+#define WF_POINTER 0x40
+
 /* address spaces (top byte of an encoded address) */
 #define SPACE_WRAM 0
 #define SPACE_ROM  1
@@ -84,6 +93,13 @@ extern CDLState cdl;
 void CDL_Exec(void);
 void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value);
 void CDL_Dma(uint8_t bAddress, uint32_t source, int32_t count);
+uint32_t* CDL_Out(uint32_t words);   /* shared drain buffer */
+
+/* cdl-wram.c */
+bool CDL_WramAlloc(void);
+void CDL_WramFree(void);
+void CDL_WramExec(int32_t romOff, const uint8_t* p, uint32_t len);
+void CDL_WramAccess(uint32_t addr, uint8_t flags, uint32_t width);
 
 static inline void CDL_OnExec(void)
 {

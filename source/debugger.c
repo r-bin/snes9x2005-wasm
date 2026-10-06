@@ -139,6 +139,13 @@ void resumeEmulation(void)
     dbg.paused = false;
 }
 
+/* Paused by pauseEmulation() or a breakpoint: the webview idles while this is set. */
+EMSCRIPTEN_KEEPALIVE
+int isEmulationPaused(void)
+{
+    return dbg.paused ? 1 : 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* CPU state inspection                                                */
 /* ------------------------------------------------------------------ */

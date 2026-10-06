@@ -51,6 +51,9 @@
     Module['writeMemory']          = function (addr, v){ Module._writeMemory(addr >>> 0, v & 0xFF);};
     Module['writeRomByte']         = function (off, v) { Module._writeRomByte(off >>> 0, v & 0xFF); };
     Module['readRomByte']          = function (off)    { return Module._readRomByte(off >>> 0);     };
+    Module['isEmulationPaused']    = function ()      {
+        return typeof Module._isEmulationPaused === 'function' && Module._isEmulationPaused() === 1;
+    };
 
     /**
      * onBreakpointHit — set this to receive breakpoint events:
@@ -74,12 +77,13 @@
  * CDL recorder (cdl.c). Off until cdlEnable(); everything lives in WASM memory.
  *
  *   Module.cdlEnable() / cdlDisable() / cdlIsEnabled()
- *   Module.cdlSeed(cdlBytes, extBytes)   - start from what the library already knows
+ *   Module.cdlSeed(cdlBytes, extBytes, wflagBytes) - start from what the library already knows
+ *   Module.cdlSetScriptContext(fetchRomOff, ptrWram, excludes[[lo, hi], ...])
  *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}],
- *                          xrefs:Uint32Array, edges:Uint32Array, stats:Uint32Array }
+ *                          wflags:[{index, data}], xrefs, edges, stats, scriptXrefs (Uint32Array) }
  *     Only what changed since the previous drain.
- *   Module.cdlView(peek) -> { cdl, ext, dirty } live views for the coverage display
- *     (dirty = chunks changed since the last non-peek call; peek leaves it set).
+ *   Module.cdlView(peek) -> { cdl, ext, dirty, wflags, wdirty } live views for the display
+ *     (dirty / wdirty = chunks changed since the last non-peek call; peek leaves them set).
  */
 (function () {
     var CHUNK = 0x10000;
@@ -98,12 +102,20 @@
     Module['cdlDisable']   = function () { Module._cdlDisable(); };
     Module['cdlIsEnabled'] = function () { return Module._cdlIsEnabled() === 1; };
 
-    Module['cdlSeed'] = function (cdlBytes, extBytes) {
+    Module['cdlSeed'] = function (cdlBytes, extBytes, wflagBytes) {
         var size = Module._cdlRomSize();
         if (!size) return;
         if (cdlBytes) HEAPU8.set(cdlBytes.subarray(0, size), Module._cdlRomPtr());
         if (extBytes) HEAPU8.set(extBytes.subarray(0, size), Module._cdlExtPtr());
+        if (wflagBytes && wflagBytes.length) HEAPU8.set(wflagBytes.subarray(0, 0x20000), Module._cdlWflagPtr());
         HEAPU8.fill(1, Module._cdlViewDirtyPtr(), Module._cdlViewDirtyPtr() + 128);
+        HEAPU8.fill(1, Module._cdlWflagViewDirtyPtr(), Module._cdlWflagViewDirtyPtr() + 32);
+    };
+
+    Module['cdlSetScriptContext'] = function (fetchRomOff, ptrWram, excludes) {
+        Module._cdlClearScriptExcludes();
+        (excludes || []).forEach(function (r) { Module._cdlAddScriptExclude(r[0] >>> 0, r[1] >>> 0); });
+        Module._cdlSetScriptContext(fetchRomOff | 0, ptrWram >>> 0);
     };
 
     Module['cdlDrain'] = function () {
@@ -124,7 +136,15 @@
             HEAPU8[wd + j] = 0;
             out.wvals.push({ index: j, data: copy(wp + j * 256 * 32, 256 * 32) });
         }
+        out.wflags = [];
+        var fd = Module._cdlWflagFlushDirtyPtr(), fp = Module._cdlWflagPtr();
+        for (var k = 0; k < 32; k++) {
+            if (!HEAPU8[fd + k]) continue;
+            HEAPU8[fd + k] = 0;
+            out.wflags.push({ index: k, data: copy(fp + k * 4096, 4096) });
+        }
         out.xrefs = drainList(Module._cdlDrainXrefs, 3);
+        out.scriptXrefs = drainList(Module._cdlDrainScriptXrefs, 3);
         out.edges = drainList(Module._cdlDrainEdges, 3);
         out.stats = drainList(Module._cdlDrainStats, 5);
         return out;
@@ -133,14 +153,16 @@
     Module['cdlView'] = function (peek) {
         var size = Module._cdlRomSize();
         if (!size) return null;
-        var d = Module._cdlViewDirtyPtr();
-        var dirty = HEAPU8.slice(d, d + 128);
-        if (!peek) HEAPU8.fill(0, d, d + 128);
+        var d = Module._cdlViewDirtyPtr(), wd = Module._cdlWflagViewDirtyPtr();
+        var dirty = HEAPU8.slice(d, d + 128), wdirty = HEAPU8.slice(wd, wd + 32);
+        if (!peek) { HEAPU8.fill(0, d, d + 128); HEAPU8.fill(0, wd, wd + 32); }
         return {
             size: size,
             cdl: new Uint8Array(HEAPU8.buffer, Module._cdlRomPtr(), size),
             ext: new Uint8Array(HEAPU8.buffer, Module._cdlExtPtr(), size),
+            wflags: new Uint8Array(HEAPU8.buffer, Module._cdlWflagPtr(), 0x20000),
             dirty: dirty,
+            wdirty: wdirty,
         };
     };
 }());

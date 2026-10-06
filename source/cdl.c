@@ -6,6 +6,7 @@
  *   cdlRomSize()   cdlRomPtr()   cdlExtPtr()   cdlWvalPtr()
  *   cdlFlushDirtyPtr() / cdlViewDirtyPtr()  : uint8[128], one per 64 KB ROM chunk
  *   cdlWvalDirtyPtr()                       : uint8[512], one per 256 WRAM bytes
+ *   (WRAM access map and script attribution: cdl-wram.c)
  *   cdlDrainXrefs() / cdlDrainEdges() / cdlDrainStats() -> record count, records at cdlOutPtr()
  *     xref  : [pc, space<<24 | addr, flags]
  *     edge  : [from, to, kind]
@@ -92,12 +93,14 @@ void CDL_Exec(void)
         }
     }
 
+    uint8_t  info = CDL_OpInfo[op];
+    uint32_t len  = 1 + (info & CDL_OP_LEN_MASK);
+    if ((info & CDL_OP_M16) && !m8) len++;
+    if ((info & CDL_OP_X16) && !x8) len++;
+    CDL_WramExec(off, p, len);
+
     if (off >= 0) {
-        uint8_t info = CDL_OpInfo[op];
-        uint32_t len = 1 + (info & CDL_OP_LEN_MASK);
         uint32_t i;
-        if ((info & CDL_OP_M16) && !m8) len++;
-        if ((info & CDL_OP_X16) && !x8) len++;
         markRom((uint32_t)off, CDL_CODE | entry | (m8 ? CDL_ACC_8 : 0) | (x8 ? CDL_IDX_8 : 0),
                 EXT_OPCODE_HEAD | (m8 ? 0 : EXT_SEEN_M16) | (x8 ? 0 : EXT_SEEN_X16));
         for (i = 1; i < len; i++) markRom((uint32_t)off + i, CDL_CODE, 0);
@@ -171,6 +174,7 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
                 int32_t d = (int32_t)addr - (int32_t)ICPU.Registers.S.W;
                 if (d >= -4 && d <= 4) return;
             }
+            CDL_WramAccess(addr, flags, width);
             if ((flags & XR_WRITE) && wvals) {
                 seeValue(addr, (uint8_t)value);
                 if (width == 2 && addr + 1 < WRAM_SIZE) seeValue(addr + 1, (uint8_t)(value >> 8));
@@ -238,6 +242,8 @@ static bool ensureOut(uint32_t words)
     return true;
 }
 
+uint32_t* CDL_Out(uint32_t words) { return ensureOut(words) ? outBuf : NULL; }
+
 EMSCRIPTEN_KEEPALIVE
 void cdlDisable(void)
 {
@@ -247,6 +253,7 @@ void cdlDisable(void)
     romCdl = romExt = wvals = NULL;
     romSize = 0;
     tableFree(&xrefs); tableFree(&edges); tableFree(&stats);
+    CDL_WramFree();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -261,7 +268,7 @@ int cdlEnable(void)
     wvals  = calloc(WRAM_SIZE * WVAL_BYTES, 1);
     if (!romCdl || !romExt || !wvals
         || !tableAlloc(&xrefs, 1 << 16, false) || !tableAlloc(&edges, 1 << 14, false)
-        || !tableAlloc(&stats, 1 << 15, true)) {
+        || !tableAlloc(&stats, 1 << 15, true) || !CDL_WramAlloc()) {
         cdlDisable();
         return 0;
     }
