@@ -4,6 +4,7 @@
 #include "memmap.h"
 #include "cpuops.h"
 #include "debugger.h"
+#include "cdl.h"
 #include "ppu.h"
 #include "cpuexec.h"
 #include "gfx.h"
@@ -32,6 +33,11 @@ void S9xMainLoop()
    /* Debugger: stay paused — caller's RAF loop should not advance frames */
    if (dbg.paused) return;
 
+#if EVS_CDL
+   /* Only accesses made while the CPU runs are recorded, never host reads. */
+   cdl.active = cdl.enabled;
+#endif
+
    if (Settings.SA1)
    {
       if (Settings.SuperFX)
@@ -46,6 +52,10 @@ void S9xMainLoop()
       else
          S9xMainLoop_NoSA1_NoSFX();
    }
+
+#if EVS_CDL
+   cdl.active = false;
+#endif
 }
 
 void S9xMainLoop_SA1_SFX()
@@ -99,6 +109,9 @@ void S9xMainLoop_SA1_SFX()
 
          CPU.PCAtOpcodeStart = CPU.PC;
          DBG_CheckExecBreakpoint();
+#if EVS_CDL
+         CDL_OnExec();
+#endif
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
 
@@ -188,6 +201,9 @@ void S9xMainLoop_SA1_NoSFX()
 
          CPU.PCAtOpcodeStart = CPU.PC;
          DBG_CheckExecBreakpoint();
+#if EVS_CDL
+         CDL_OnExec();
+#endif
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
 
@@ -277,6 +293,9 @@ void S9xMainLoop_NoSA1_SFX()
 
          CPU.PCAtOpcodeStart = CPU.PC;
          DBG_CheckExecBreakpoint();
+#if EVS_CDL
+         CDL_OnExec();
+#endif
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
          DO_HBLANK_CHECK_SFX();
@@ -363,6 +382,9 @@ void S9xMainLoop_NoSA1_NoSFX()
 
          CPU.PCAtOpcodeStart = CPU.PC;
          DBG_CheckExecBreakpoint();
+#if EVS_CDL
+         CDL_OnExec();
+#endif
          CPU.Cycles += CPU.MemSpeed;
          (*ICPU.S9xOpcodes [*CPU.PC++].S9xOpcode)();
          DO_HBLANK_CHECK_NoSFX();

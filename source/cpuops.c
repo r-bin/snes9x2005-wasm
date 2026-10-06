@@ -13,6 +13,7 @@
 #include "cpuexec.h"
 #include "cpuaddr.h"
 #include "cpuops.h"
+#include "cdl.h"
 #include "cpumacro.h"
 #include "apu.h"
 
@@ -3352,6 +3353,9 @@ static void Op82(void)
 /* IRQ */
 void S9xOpcode_IRQ(void)
 {
+#if EVS_CDL && !defined(SA1_OPCODES)
+   cdl.inInterrupt = true;
+#endif
    if (!CheckEmulation())
    {
       PushB(ICPU.Registers.PB);
@@ -3400,6 +3404,9 @@ void S9xOpcode_IRQ(void)
 /* NMI */
 void S9xOpcode_NMI(void)
 {
+#if EVS_CDL && !defined(SA1_OPCODES)
+   cdl.inInterrupt = true;
+#endif
    if (!CheckEmulation())
    {
       PushB(ICPU.Registers.PB);

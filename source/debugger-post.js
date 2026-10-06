@@ -69,3 +69,78 @@
         Module['onBreakpointHit'] = null;
     }
 }());
+
+/**
+ * CDL recorder (cdl.c). Off until cdlEnable(); everything lives in WASM memory.
+ *
+ *   Module.cdlEnable() / cdlDisable() / cdlIsEnabled()
+ *   Module.cdlSeed(cdlBytes, extBytes)   - start from what the library already knows
+ *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}],
+ *                          xrefs:Uint32Array, edges:Uint32Array, stats:Uint32Array }
+ *     Only what changed since the previous drain.
+ *   Module.cdlView(peek) -> { cdl, ext, dirty } live views for the coverage display
+ *     (dirty = chunks changed since the last non-peek call; peek leaves it set).
+ */
+(function () {
+    var CHUNK = 0x10000;
+
+    function copy(ptr, len) { return new Uint8Array(HEAPU8.buffer, ptr, len).slice(); }
+
+    function drainList(fn, words) {
+        var n = fn();
+        if (!n) return new Uint32Array(0);
+        var p = Module._cdlOutPtr() >>> 2;
+        return HEAPU32.slice(p, p + n * words);
+    }
+
+    // false when the core was built with -DEVS_CDL=0
+    Module['cdlEnable']    = function () { return typeof Module._cdlEnable === 'function' && Module._cdlEnable() === 1; };
+    Module['cdlDisable']   = function () { Module._cdlDisable(); };
+    Module['cdlIsEnabled'] = function () { return Module._cdlIsEnabled() === 1; };
+
+    Module['cdlSeed'] = function (cdlBytes, extBytes) {
+        var size = Module._cdlRomSize();
+        if (!size) return;
+        if (cdlBytes) HEAPU8.set(cdlBytes.subarray(0, size), Module._cdlRomPtr());
+        if (extBytes) HEAPU8.set(extBytes.subarray(0, size), Module._cdlExtPtr());
+        HEAPU8.fill(1, Module._cdlViewDirtyPtr(), Module._cdlViewDirtyPtr() + 128);
+    };
+
+    Module['cdlDrain'] = function () {
+        var size = Module._cdlRomSize();
+        var out = { size: size, chunks: [], wvals: [] };
+        if (!size) return out;
+        var dirty = Module._cdlFlushDirtyPtr();
+        var romP = Module._cdlRomPtr(), extP = Module._cdlExtPtr();
+        for (var i = 0; i * CHUNK < size; i++) {
+            if (!HEAPU8[dirty + i]) continue;
+            HEAPU8[dirty + i] = 0;
+            var len = Math.min(CHUNK, size - i * CHUNK);
+            out.chunks.push({ index: i, cdl: copy(romP + i * CHUNK, len), ext: copy(extP + i * CHUNK, len) });
+        }
+        var wd = Module._cdlWvalDirtyPtr(), wp = Module._cdlWvalPtr();
+        for (var j = 0; j < 512; j++) {
+            if (!HEAPU8[wd + j]) continue;
+            HEAPU8[wd + j] = 0;
+            out.wvals.push({ index: j, data: copy(wp + j * 256 * 32, 256 * 32) });
+        }
+        out.xrefs = drainList(Module._cdlDrainXrefs, 3);
+        out.edges = drainList(Module._cdlDrainEdges, 3);
+        out.stats = drainList(Module._cdlDrainStats, 5);
+        return out;
+    };
+
+    Module['cdlView'] = function (peek) {
+        var size = Module._cdlRomSize();
+        if (!size) return null;
+        var d = Module._cdlViewDirtyPtr();
+        var dirty = HEAPU8.slice(d, d + 128);
+        if (!peek) HEAPU8.fill(0, d, d + 128);
+        return {
+            size: size,
+            cdl: new Uint8Array(HEAPU8.buffer, Module._cdlRomPtr(), size),
+            ext: new Uint8Array(HEAPU8.buffer, Module._cdlExtPtr(), size),
+            dirty: dirty,
+        };
+    };
+}());

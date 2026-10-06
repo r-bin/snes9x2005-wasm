@@ -4,6 +4,7 @@
 #include "dsp1.h"
 #include "cpuexec.h"
 #include "debugger.h"
+#include "cdl.h"
 #include "sa1.h"
 #include "spc7110.h"
 #include "obc1.h"
@@ -18,6 +19,10 @@ uint8_t S9xGetByte(uint32_t Address)
 
    if ((intptr_t) GetAddress != MAP_CPU || !CPU.InDMA)
       CPU.Cycles += Memory.MemorySpeed [block];
+
+#if EVS_CDL
+   CDL_ON_ACCESS(Address, GetAddress, XR_READ | XR_BYTE, 0);
+#endif
 
    if (GetAddress >= (uint8_t*) MAP_LAST)
    {
@@ -77,6 +82,10 @@ uint16_t S9xGetWord(uint32_t Address)
 
    if ((intptr_t) GetAddress != MAP_CPU || !CPU.InDMA)
       CPU.Cycles += (Memory.MemorySpeed [block] << 1);
+
+#if EVS_CDL
+   CDL_ON_ACCESS(Address, GetAddress, XR_READ | XR_WORD, 0);
+#endif
 
    if (GetAddress >= (uint8_t*) MAP_LAST)
    {
@@ -142,6 +151,10 @@ void S9xSetByte(uint8_t Byte, uint32_t Address)
 
    if ((intptr_t) SetAddress != MAP_CPU || !CPU.InDMA)
       CPU.Cycles += Memory.MemorySpeed [block];
+
+#if EVS_CDL
+   CDL_ON_ACCESS(Address, SetAddress, XR_WRITE | XR_BYTE, Byte);
+#endif
 
    if (SetAddress >= (uint8_t*) MAP_LAST)
    {
@@ -226,6 +239,10 @@ void S9xSetWord(uint16_t Word, uint32_t Address)
 
    if ((intptr_t) SetAddress != MAP_CPU || !CPU.InDMA)
       CPU.Cycles += Memory.MemorySpeed [block] << 1;
+
+#if EVS_CDL
+   CDL_ON_ACCESS(Address, SetAddress, XR_WRITE | XR_WORD, Word);
+#endif
 
    if (SetAddress >= (uint8_t*) MAP_LAST)
    {

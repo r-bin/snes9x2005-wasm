@@ -5,6 +5,7 @@
 #include "ppu.h"
 #include "cpuexec.h"
 #include "dma.h"
+#include "cdl.h"
 #include "apu.h"
 #include "sa1.h"
 #include "sdd1emu.h"
@@ -38,6 +39,12 @@ void S9xDoDMA(uint8_t Channel)
    CPU.InDMA = true;
    d = &DMA[Channel];
    count = d->TransferBytes;
+
+#if EVS_CDL
+   /* A-bus -> B-bus transfers from ROM: graphics (VRAM/CGRAM/OAM) or other assets. */
+   if (!d->TransferDirection && !d->AAddressFixed && !d->AAddressDecrement)
+      CDL_Dma(d->BAddress, ((uint32_t) d->ABank << 16) | d->AAddress, count ? count : 0x10000);
+#endif
 
    /* Prepare for custom chip DMA */
    if (count == 0)
