@@ -2053,6 +2053,8 @@ void S9xUpdateJustifiers()
    }
 }
 
+extern bool joyPadYCable; /* exports.c */
+
 void S9xUpdateJoypads()
 {
    uint32_t i;
@@ -2097,7 +2099,7 @@ void S9xUpdateJoypads()
       Memory.FillRAM [0x4219] = (uint8_t)(IPPU.Joypads [0] >> 8);
       Memory.FillRAM [0x421a] = (uint8_t) IPPU.Joypads [1];
       Memory.FillRAM [0x421b] = (uint8_t)(IPPU.Joypads [1] >> 8);
-      if (Memory.FillRAM [0x4201] & 0x80)
+      if ((Memory.FillRAM [0x4201] & 0x80) && !joyPadYCable)
       {
          Memory.FillRAM [0x421c] = (uint8_t) IPPU.Joypads [0];
          Memory.FillRAM [0x421d] = (uint8_t)(IPPU.Joypads [0] >> 8);

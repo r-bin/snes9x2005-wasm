@@ -20,6 +20,12 @@
 #define SOUND_BUFFER_SAMPLES 16384
 int joyPadInput = 0;
 int joyPadInput2 = 0;
+/* Y-cable (lsnes "ygamepad16"): a second pad on each port's data2 line, read
+ * by auto-joypad into $421C (port 1) and $421E (port 2). Off unless a movie
+ * sets all four pads with setJoypadInputs. */
+int joyPadInput3 = 0;
+int joyPadInput4 = 0;
+bool joyPadYCable = false;
 bool runGameFlag = false;
 unsigned char *rgba8ScreenBuffer = NULL;
 float *f32soundBuffer = NULL;
@@ -35,6 +41,19 @@ unsigned int soundBufferStuckCount = 0;
 EMSCRIPTEN_KEEPALIVE
 void setJoypadInput(int32_t input){
     joyPadInput = input;
+    joyPadInput3 = joyPadInput4 = 0;
+    joyPadYCable = false;
+}
+
+/* All four pads of a Y-cable movie: port 1 data1/data2, port 2 data1/data2.
+ * Raw 16-bit words (bit 15 = B ... bits 3-0 = the pad's extra lines). */
+EMSCRIPTEN_KEEPALIVE
+void setJoypadInputs(int32_t p1, int32_t p1b, int32_t p2, int32_t p2b){
+    joyPadInput = p1;
+    joyPadInput2 = p2;
+    joyPadInput3 = p1b;
+    joyPadInput4 = p2b;
+    joyPadYCable = true;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -45,6 +64,8 @@ void setJoypadInput2(int32_t input){
 uint32_t S9xReadJoypad(int32_t port){
     if(port == 0)return joyPadInput;
     if(port == 1)return joyPadInput2;
+    if(port == 3)return joyPadInput3;
+    if(port == 4)return joyPadInput4;
     return 0;
 }
 
@@ -149,6 +170,22 @@ void startWithRom(unsigned char *rom, unsigned int romLength, unsigned int sampl
     if(runGameFlag){
         //SRAM初期化
         if(Memory.SRAM)memset(Memory.SRAM, 0, 0x20000);
+        /* Power-on, not reset: S9xReset leaves CPU timing fields, APU state and
+         * DSP channel state and the 65816 registers (A, X/Y low) from the
+         * previous run, so a restarted ROM drifted from a freshly booted one
+         * and input movies desynced. Clear them to their first-boot (zero)
+         * values; IAPU.RAM is the only owned pointer. */
+#ifndef USE_BLARGG_APU
+        {
+            uint8_t *apuRam = IAPU.RAM;
+            memset(&APU, 0, sizeof(APU));
+            memset(&IAPU, 0, sizeof(IAPU));
+            IAPU.RAM = apuRam;
+            memset(&SoundData, 0, sizeof(SoundData));
+        }
+#endif
+        memset(&CPU, 0, sizeof(CPU));
+        memset(&ICPU, 0, sizeof(ICPU));
         LoadROMFromBuffer(rom, romLength);
         S9xReset();
         return;

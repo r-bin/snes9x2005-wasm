@@ -196,10 +196,41 @@ uint32_t* getCPUState(void)
 /* Memory access                                                       */
 /* ------------------------------------------------------------------ */
 
+/* Debugger reads must not disturb emulation: S9xGetByte charges CPU cycles,
+ * sets the idle-loop WaitAddress and runs I/O register handlers (latches,
+ * NMI/IRQ flag clears). The host polls memory at wall-clock times, so going
+ * through it made every session (and input movie replay) non-reproducible.
+ * Peek instead: memory directly, I/O registers as their last written value. */
+static uint8_t dbgPeekByte(uint32_t addr)
+{
+    int32_t block = (addr >> MEMMAP_SHIFT) & MEMMAP_MASK;
+    uint8_t* p = Memory.Map[block];
+
+    if (p >= (uint8_t*) MAP_LAST)
+        return p[addr & 0xffff];
+
+    switch ((intptr_t) p)
+    {
+    case MAP_PPU:
+    case MAP_CPU:
+        return Memory.FillRAM[addr & 0x7fff];
+    case MAP_SA1RAM:
+    case MAP_LOROM_SRAM:
+        return Memory.SRAM[(((addr & 0xFF0000) >> 1) | (addr & 0x7FFF)) & Memory.SRAMMask];
+    case MAP_RONLY_SRAM:
+    case MAP_HIROM_SRAM:
+        return Memory.SRAM[((addr & 0x7fff) - 0x6000 + ((addr & 0xf0000) >> 3)) & Memory.SRAMMask];
+    case MAP_BWRAM:
+        return Memory.BWRAM[(addr & 0x7fff) - 0x6000];
+    default:
+        return 0;
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE
 uint8_t readMemory(uint32_t addr)
 {
-    return S9xGetByte(addr);
+    return dbgPeekByte(addr);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -218,7 +249,7 @@ uint8_t* readMemoryRange(uint32_t addr, uint32_t size)
     uint32_t i;
     if (size > DBG_READ_BUF_SIZE) size = DBG_READ_BUF_SIZE;
     for (i = 0; i < size; i++)
-        readBuf[i] = S9xGetByte(addr + i);
+        readBuf[i] = dbgPeekByte(addr + i);
     return readBuf;
 }
 
