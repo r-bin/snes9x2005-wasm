@@ -55,6 +55,9 @@ Module.onBreakpointHit = function(event) {
 
   // read 16 bytes of WRAM
   const bytes = Module.readMemoryRange(0x7E0000, 16);
+
+  // return false to keep running (conditional breakpoint); anything else pauses
+  // (the instruction at the breakpoint still executes, the CPU stops right after it)
   console.log(bytes);
 };
 ```

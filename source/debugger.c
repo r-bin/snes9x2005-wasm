@@ -40,6 +40,25 @@ DebuggerState dbg = {
 
 void DBG_FireBreakpoint(uint8_t type, uint32_t addr, uint8_t value, uint32_t pc)
 {
+    /*
+     * Ask the JS frontend (Module.onBreakpointHit) first: returning false
+     * means "not interested, keep running" — a conditional breakpoint. The
+     * VS Code debugger uses it to hook the script interpreter's opcode fetch
+     * and stop only on the script addresses it wants. Anything else pauses.
+     */
+    int pause = EM_ASM_INT({
+        var cb = Module['onBreakpointHit'];
+        if (typeof cb !== 'function') return 1;
+        var result = cb({
+            type    : $0 ? 'write' : 'exec',
+            address : $1 >>> 0,
+            value   : $2,
+            pc      : $3 >>> 0
+        });
+        return result === false ? 0 : 1;
+    }, (int)type, (int)addr, (int)value, (int)pc);
+    if (!pause) return;
+
     /* Pause the emulation loop — mainLoop() checks this flag */
     dbg.paused = true;
 
@@ -50,19 +69,6 @@ void DBG_FireBreakpoint(uint8_t type, uint32_t addr, uint8_t value, uint32_t pc)
      * terminates normally.  The flag is cleared after the loop exits.
      */
     CPU.Flags |= SCAN_KEYS_FLAG;
-
-    /* Notify JS frontend via Module.onBreakpointHit callback */
-    EM_ASM({
-        var cb = Module['onBreakpointHit'];
-        if (typeof cb === 'function') {
-            cb({
-                type    : $0 ? 'write' : 'exec',
-                address : $1 >>> 0,
-                value   : $2,
-                pc      : $3 >>> 0
-            });
-        }
-    }, (int)type, (int)addr, (int)value, (int)pc);
 }
 
 /* ------------------------------------------------------------------ */
