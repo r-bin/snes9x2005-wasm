@@ -16,6 +16,7 @@
 #include "evs-tas.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 
 #define SOUND_BUFFER_SAMPLES 16384
@@ -232,6 +233,23 @@ void mainLoop(){
     #ifndef USE_BLARGG_APU
     S9xSoundCallback();
     #endif
+}
+
+/* What the PPU draws the next frame with: CGRAM (512 bytes) then the last
+ * values written to INIDISP ($2100), TM ($212C), TS ($212D), CGWSEL ($2130)
+ * and CGADSUB ($2131). mainLoop() returns after the frame's NMI, so this read
+ * before mainLoop() is exactly the state the coming frame renders with —
+ * unlike the game's WRAM mirrors, which run a frame or more ahead. */
+EMSCRIPTEN_KEEPALIVE
+uint8_t *getPpuView(void){
+    static uint8_t view[512 + 8];
+    memcpy(view, PPU.CGDATA, 512);
+    view[512] = Memory.FillRAM[0x2100];
+    view[513] = Memory.FillRAM[0x212C];
+    view[514] = Memory.FillRAM[0x212D];
+    view[515] = Memory.FillRAM[0x2130];
+    view[516] = Memory.FillRAM[0x2131];
+    return view;
 }
 
 EMSCRIPTEN_KEEPALIVE
