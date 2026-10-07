@@ -13,6 +13,7 @@
 #include "spc7110.h"
 #include "fxemu.h"
 #include "fxinst.h"
+#include "evs-tas.h"
 
 extern FxInit_s SuperFX;
 extern uint8_t mul_brightness [16][32];
@@ -1421,6 +1422,9 @@ uint8_t S9xGetCPU(uint16_t Address)
       {
       case 0x4016:
       {
+#if EVS_TAS
+         evsInputPolled = true;
+#endif
          if (Memory.FillRAM [0x4016] & 1)
             return 0;
 
@@ -1431,6 +1435,9 @@ uint8_t S9xGetCPU(uint16_t Address)
       }
       case 0x4017:
       {
+#if EVS_TAS
+         evsInputPolled = true;
+#endif
          if (Memory.FillRAM [0x4016] & 1)
          {
             if (IPPU.Controller == SNES_MULTIPLAYER5) /* MultiPlayer5 adaptor is only allowed to be plugged into port 2 */
@@ -1517,6 +1524,9 @@ uint8_t S9xGetCPU(uint16_t Address)
       case 0x421d:
       case 0x421e:
       case 0x421f: /* Joypads 1-4 button and direction state. */
+#if EVS_TAS
+         evsInputPolled = true;
+#endif
          return Memory.FillRAM [Address];
       case 0x4300:
       case 0x4310:
@@ -2053,8 +2063,6 @@ void S9xUpdateJustifiers()
    }
 }
 
-extern bool joyPadYCable; /* exports.c */
-
 void S9xUpdateJoypads()
 {
    uint32_t i;
@@ -2099,7 +2107,7 @@ void S9xUpdateJoypads()
       Memory.FillRAM [0x4219] = (uint8_t)(IPPU.Joypads [0] >> 8);
       Memory.FillRAM [0x421a] = (uint8_t) IPPU.Joypads [1];
       Memory.FillRAM [0x421b] = (uint8_t)(IPPU.Joypads [1] >> 8);
-      if ((Memory.FillRAM [0x4201] & 0x80) && !joyPadYCable)
+      if (Memory.FillRAM [0x4201] & 0x80)
       {
          Memory.FillRAM [0x421c] = (uint8_t) IPPU.Joypads [0];
          Memory.FillRAM [0x421d] = (uint8_t)(IPPU.Joypads [0] >> 8);

@@ -20,6 +20,7 @@
 #include "snes9x.h"
 #include "cpuexec.h"
 #include "memmap.h"
+#include "evs-tas.h"
 
 /* ------------------------------------------------------------------ */
 /* Global debugger state                                               */
@@ -196,6 +197,7 @@ uint32_t* getCPUState(void)
 /* Memory access                                                       */
 /* ------------------------------------------------------------------ */
 
+#if EVS_TAS
 /* Debugger reads must not disturb emulation: S9xGetByte charges CPU cycles,
  * sets the idle-loop WaitAddress and runs I/O register handlers (latches,
  * NMI/IRQ flag clears). The host polls memory at wall-clock times, so going
@@ -226,6 +228,10 @@ static uint8_t dbgPeekByte(uint32_t addr)
         return 0;
     }
 }
+
+#else
+#define dbgPeekByte(addr) S9xGetByte(addr)
+#endif
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t readMemory(uint32_t addr)
