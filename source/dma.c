@@ -41,9 +41,10 @@ void S9xDoDMA(uint8_t Channel)
    count = d->TransferBytes;
 
 #if EVS_CDL
-   /* A-bus -> B-bus transfers from ROM: graphics (VRAM/CGRAM/OAM) or other assets. */
-   if (!d->TransferDirection && !d->AAddressFixed && !d->AAddressDecrement)
-      CDL_Dma(d->BAddress, ((uint32_t) d->ABank << 16) | d->AAddress, count ? count : 0x10000);
+   /* ROM sources (graphics, assets), WRAM read / written by DMA, WMDATA ($2180) fills. */
+   if (!d->AAddressDecrement)
+      CDL_Dma(d->BAddress, ((uint32_t) d->ABank << 16) | d->AAddress, count ? count : 0x10000,
+              d->TransferDirection, d->AAddressFixed);
 #endif
 
    /* Prepare for custom chip DMA */
@@ -592,6 +593,9 @@ void S9xStartHDMA(void)
          DMA [i].LineCount = 0;
          DMA [i].FirstLine = true;
          DMA [i].Address = DMA [i].AAddress;
+#if EVS_CDL
+         CDL_HdmaStart(((uint32_t) DMA [i].ABank << 16) | DMA [i].AAddress);
+#endif
          if (DMA[i].HDMAIndirectAddressing)
             CPU.Cycles += (SLOW_ONE_CYCLE << 2);
       }
@@ -618,6 +622,9 @@ uint8_t S9xDoHDMA(uint8_t byte)
              * Get/Set incur no charges! */
             CPU.Cycles += SLOW_ONE_CYCLE;
             line        = S9xGetByte((p->ABank << 16) + p->Address);
+#if EVS_CDL
+            CDL_HdmaBus(((uint32_t) p->ABank << 16) + p->Address, p->HDMAIndirectAddressing ? 3 : 1);
+#endif
 
             if (line == 0x80)
             {
@@ -688,6 +695,9 @@ uint8_t S9xDoHDMA(uint8_t byte)
             continue;
          }
 
+#if EVS_CDL
+         CDL_HdmaBytes(HDMAMemPointers [d], HDMA_ModeByteCounts [p->TransferMode]);
+#endif
          switch (p->TransferMode)
          {
             case 0:

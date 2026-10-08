@@ -11,7 +11,12 @@
  * Interrupts suspend the context; excluded ranges (scratch, the slot table)
  * are never attributed.
  *
+ * Code executed from WRAM: its bytes are kept in wcode (first bytes seen) and
+ * wcodeState marks WCODE_SEEN / WCODE_CHANGED (executed again with other bytes:
+ * self-modifying or reused buffer), so the export can emit snesrecomp ram_routines.
+ *
  * Exports:
+ *   cdlWcodePtr() / cdlWcodeStatePtr() / cdlWcodeDirtyPtr()   uint8[32] per 4 KB
  *   cdlSetScriptContext(fetchRomOff, ptrWram)   (-1 disables)
  *   cdlClearScriptExcludes() / cdlAddScriptExclude(lo, hi)   WRAM offsets, inclusive
  *   cdlWflagPtr() / cdlWflagFlushDirtyPtr() / cdlWflagViewDirtyPtr()   uint8[32] per 4 KB
@@ -30,7 +35,13 @@
 #define WFLAG_CHUNKS 32
 #define EXCLUDE_MAX  8
 
+#define WCODE_SEEN    0x01
+#define WCODE_CHANGED 0x02
+
 static uint8_t* wflags;
+static uint8_t* wcode;
+static uint8_t* wcodeState;
+static uint8_t  wcodeDirty[WFLAG_CHUNKS];
 static uint8_t  wflagFlushDirty[WFLAG_CHUNKS];
 static uint8_t  wflagViewDirty[WFLAG_CHUNKS];
 static Table    scriptXrefs;
@@ -53,19 +64,29 @@ static inline void markW(uint32_t a, uint8_t f)
     }
 }
 
+void CDL_WramMarkRange(uint32_t addr, int32_t count, uint8_t wf)
+{
+    int32_t i;
+    if (!wflags) return;
+    for (i = 0; i < count; i++) markW((addr + (uint32_t)i) & (WRAM_SIZE - 1), wf);
+}
+
 bool CDL_WramAlloc(void)
 {
     wflags = calloc(WRAM_SIZE, 1);
+    wcode = calloc(WRAM_SIZE, 1);
+    wcodeState = calloc(WRAM_SIZE, 1);
+    memset(wcodeDirty, 0, sizeof(wcodeDirty));
     memset(wflagFlushDirty, 0, sizeof(wflagFlushDirty));
     memset(wflagViewDirty, 1, sizeof(wflagViewDirty));
     ctxActive = ctxSuspended = false;
-    return wflags && tableAlloc(&scriptXrefs, 1 << 12, false);
+    return wflags && wcode && wcodeState && tableAlloc(&scriptXrefs, 1 << 12, false);
 }
 
 void CDL_WramFree(void)
 {
-    free(wflags);
-    wflags = NULL;
+    free(wflags); free(wcode); free(wcodeState);
+    wflags = wcode = wcodeState = NULL;
     tableFree(&scriptXrefs);
     ctxActive = false;
 }
@@ -91,7 +112,13 @@ void CDL_WramExec(int32_t romOff, const uint8_t* p, uint32_t len)
 
     if (romOff < 0 && p >= Memory.RAM && p < Memory.RAM + WRAM_SIZE) {
         uint32_t a = (uint32_t)(p - Memory.RAM);
-        for (i = 0; i < len; i++) markW(a + i, WF_EXEC);
+        for (i = 0; i < len && a + i < WRAM_SIZE; i++) {
+            uint32_t w = a + i;
+            uint8_t  b = p[i];
+            markW(w, WF_EXEC);
+            if (!(wcodeState[w] & WCODE_SEEN)) { wcode[w] = b; wcodeState[w] = WCODE_SEEN; wcodeDirty[w >> 12] = 1; }
+            else if (wcode[w] != b && !(wcodeState[w] & WCODE_CHANGED)) { wcodeState[w] |= WCODE_CHANGED; wcodeDirty[w >> 12] = 1; }
+        }
     }
 }
 
@@ -141,6 +168,9 @@ void cdlAddScriptExclude(uint32_t lo, uint32_t hi)
 }
 
 EMSCRIPTEN_KEEPALIVE uint8_t* cdlWflagPtr(void)           { return wflags; }
+EMSCRIPTEN_KEEPALIVE uint8_t* cdlWcodePtr(void)           { return wcode; }
+EMSCRIPTEN_KEEPALIVE uint8_t* cdlWcodeStatePtr(void)      { return wcodeState; }
+EMSCRIPTEN_KEEPALIVE uint8_t* cdlWcodeDirtyPtr(void)      { return wcodeDirty; }
 EMSCRIPTEN_KEEPALIVE uint8_t* cdlWflagFlushDirtyPtr(void) { return wflagFlushDirty; }
 EMSCRIPTEN_KEEPALIVE uint8_t* cdlWflagViewDirtyPtr(void)  { return wflagViewDirty; }
 

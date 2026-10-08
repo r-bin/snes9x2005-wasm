@@ -81,7 +81,10 @@
  *   Module.cdlSetScriptContext(fetchRomOff, ptrWram, excludes[[lo, hi], ...])
  *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}],
  *                          wflags:[{index, data}], xrefs, edges, stats, scriptXrefs,
- *                          romHits [off, n], wramHits [addr, reads, writes] (Uint32Array) }
+ *                          romHits [off, n], wramHits [addr, reads, writes],
+ *                          rets [entry, retPc, mx<<8|flags], regs [pc, kind<<16|value],
+ *                          bases [pc, base24, flags] (Uint32Array),
+ *                          wcode:[{index, code, state}] (4 KB), aram:[{index, data}] (4 KB), dropped }
  *     Only what changed since the previous drain; hit counts are deltas (zeroed by the drain).
  *   Module.cdlView(peek) -> { cdl, ext, dirty, wflags, wdirty } live views for the display
  *     (dirty / wdirty = chunks changed since the last non-peek call; peek leaves them set).
@@ -150,6 +153,29 @@
         out.stats = drainList(Module._cdlDrainStats, 5);
         out.romHits = typeof Module._cdlDrainRomHits === 'function' ? drainList(Module._cdlDrainRomHits, 2) : new Uint32Array(0);
         out.wramHits = typeof Module._cdlDrainWramHits === 'function' ? drainList(Module._cdlDrainWramHits, 3) : new Uint32Array(0);
+        var opt = function (name, words) { return typeof Module[name] === 'function' ? drainList(Module[name], words) : new Uint32Array(0); };
+        out.rets = opt('_cdlDrainRets', 3);
+        out.regs = opt('_cdlDrainRegs', 2);
+        out.bases = opt('_cdlDrainBases', 3);
+        out.wcode = [];
+        if (typeof Module._cdlWcodeDirtyPtr === 'function') {
+            var cd = Module._cdlWcodeDirtyPtr(), cp = Module._cdlWcodePtr(), cs = Module._cdlWcodeStatePtr();
+            for (var c = 0; c < 32; c++) {
+                if (!HEAPU8[cd + c]) continue;
+                HEAPU8[cd + c] = 0;
+                out.wcode.push({ index: c, code: copy(cp + c * 4096, 4096), state: copy(cs + c * 4096, 4096) });
+            }
+        }
+        out.aram = [];
+        if (typeof Module._cdlAramDirtyPtr === 'function') {
+            var ad = Module._cdlAramDirtyPtr(), ap = Module._cdlAramPtr();
+            for (var q = 0; q < 16; q++) {
+                if (!HEAPU8[ad + q]) continue;
+                HEAPU8[ad + q] = 0;
+                out.aram.push({ index: q, data: copy(ap + q * 4096, 4096) });
+            }
+        }
+        out.dropped = typeof Module._cdlDroppedCount === 'function' ? Module._cdlDroppedCount() : 0;
         return out;
     };
 

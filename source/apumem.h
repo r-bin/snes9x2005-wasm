@@ -3,11 +3,14 @@
 #ifndef _apumemory_h_
 #define _apumemory_h_
 
+#include "cdl.h"   /* CDL_SPC_ACCESS: SPC700 coverage (cdl-spc.c) */
+
 extern uint8_t W4;
 extern uint8_t APUROM[64];
 
 static uint8_t S9xAPUGetByteZ(uint8_t Address)
 {
+   CDL_SPC_ACCESS((IAPU.DirectPage - IAPU.RAM) + Address, ARAM_READ);
    if (Address >= 0xf0 && IAPU.DirectPage == IAPU.RAM)
    {
       if (Address >= 0xf4 && Address <= 0xf7)
@@ -34,6 +37,7 @@ static uint8_t S9xAPUGetByteZ(uint8_t Address)
 
 static void S9xAPUSetByteZ(uint8_t byte, uint8_t Address)
 {
+   CDL_SPC_ACCESS((IAPU.DirectPage - IAPU.RAM) + Address, ARAM_WRITE);
    if (Address >= 0xf0 && IAPU.DirectPage == IAPU.RAM)
    {
       if (Address == 0xf3)
@@ -64,6 +68,7 @@ static uint8_t S9xAPUGetByte(uint32_t Address)
    uint8_t t;
 
    Address &= 0xffff;
+   CDL_SPC_ACCESS(Address, ARAM_READ);
 
    if (Address == 0xf3)
       return S9xGetAPUDSP();
@@ -86,6 +91,7 @@ static uint8_t S9xAPUGetByte(uint32_t Address)
 static void S9xAPUSetByte(uint8_t byte, uint32_t Address)
 {
    Address &= 0xffff;
+   CDL_SPC_ACCESS(Address, ARAM_WRITE);
 
    if (Address <= 0xff && Address >= 0xf0)
    {

@@ -10,6 +10,8 @@
 
 #define TABLE_MAX (1u << 23)
 
+uint32_t cdlDropped;
+
 void tableFree(Table* t)
 {
     free(t->keys); free(t->vals); free(t->dirty); free(t->count);
@@ -86,7 +88,7 @@ uint32_t tableSlot(Table* t, uint64_t key, bool insert)
     if (t->keys[i]) return i;
     if (!insert) return UINT32_MAX;
     if ((t->used + 1) * 2 > t->cap) {
-        if (!tableGrow(t)) return UINT32_MAX;
+        if (!tableGrow(t)) { cdlDropped++; return UINT32_MAX; }
         i = findSlot(t, key);
     }
     t->keys[i] = key;

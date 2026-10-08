@@ -6,7 +6,9 @@
  *   cdlRomSize()   cdlRomPtr()   cdlExtPtr()   cdlWvalPtr()
  *   cdlFlushDirtyPtr() / cdlViewDirtyPtr()  : uint8[128], one per 64 KB ROM chunk
  *   cdlWvalDirtyPtr()                       : uint8[512], one per 256 WRAM bytes
- *   (WRAM access map and script attribution: cdl-wram.c; hit counters: cdl-count.c)
+ *   (WRAM access map, script attribution, WRAM code: cdl-wram.c; hit counters: cdl-count.c;
+ *    call stack / returns: cdl-flow.c; DB / D / pointer bases: cdl-regs.c; SPC700: cdl-spc.c)
+ *   cdlDroppedCount()  table inserts lost because a table hit its size limit
  *   cdlDrainXrefs() / cdlDrainEdges() / cdlDrainStats() -> record count, records at cdlOutPtr()
  *     xref  : [pc, space<<24 | addr, flags]
  *     edge  : [from, to, kind]
@@ -20,6 +22,7 @@
 #include "cdl.h"
 #include "cdl-optable.h"
 #include "cdl-table.h"
+#include "ppu.h"
 
 #if EVS_CDL
 
@@ -71,6 +74,8 @@ static void recordEdge(uint32_t from, uint32_t to, uint8_t kind)
     tableOr(&edges, (1ULL << 63) | ((uint64_t)from << 24) | to, kind);
 }
 
+void CDL_RecordEdge(uint32_t from, uint32_t to, uint8_t kind) { recordEdge(from, to, kind); }
+
 void CDL_Exec(void)
 {
     uint8_t* p   = CPU.PCAtOpcodeStart;
@@ -92,6 +97,9 @@ void CDL_Exec(void)
             entry = (kind & 1) ? CDL_SUB_ENTRY : CDL_JUMP_TARGET;
         }
     }
+
+    entry |= CDL_FlowExec(pc, ICPU.Registers.S.W, m8, x8);
+    CDL_RegsExec(off, p, pc);
 
     uint8_t  info = CDL_OpInfo[op];
     uint32_t len  = 1 + (info & CDL_OP_LEN_MASK);
@@ -174,6 +182,8 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
             if ((cdl.inInterrupt || (CDL_OpInfo[cdl.curOp] & CDL_OP_STACK)) && addr < 0x2000) {
                 int32_t d = (int32_t)addr - (int32_t)ICPU.Registers.S.W;
                 if (d >= -4 && d <= 4) return;
+                /* sr,S and the pointer fetch of (sr,S),Y: the stack frame, not variables */
+                if ((CDL_OpPtr[cdl.curOp] == CDL_PTR_SR || CDL_OpPtr[cdl.curOp] == CDL_PTR_ISRY) && d > 0 && d <= 0x101) return;
             }
             CDL_WramAccess(addr, flags, width);
             CDL_CountWram(addr, (flags & XR_WRITE) != 0);
@@ -203,6 +213,13 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
         addr  = address & 0xFFFF;
         if ((flags & XR_WRITE) && addr >= 0x2140 && addr <= 0x2143 && cdl.seq - cdl.lastRomReadSeq <= 4)
             markRom(cdl.lastRomRead, 0, EXT_APU_SOURCE);
+        if (addr == 0x2180) {                       /* WMDATA: the WRAM byte at $2181-3 */
+            uint32_t w = PPU.WRAM & 0x1FFFF;
+            CDL_WramAccess(w, flags, 1);
+            CDL_WramMarkRange(w, 1, WF_DMA);
+            CDL_CountWram(w, (flags & XR_WRITE) != 0);
+            if ((flags & XR_WRITE) && wvals) seeValue(w, (uint8_t)value);
+        }
     } else {
         space = SPACE_BUS;
         addr  = address & 0xFFFFFF;
@@ -210,22 +227,72 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
     recordXref(space, addr, flags);
 }
 
-void CDL_Dma(uint8_t bAddress, uint32_t source, int32_t count)
+/* One DMA channel start. A-bus side in ROM: graphics / asset source. In WRAM:
+ * read (A->B) or written (B->A). B address $80 (WMDATA) writes WRAM at $2181-3. */
+void CDL_Dma(uint8_t bAddress, uint32_t source, int32_t count, bool toA, bool fixed)
 {
     uint8_t* base;
+    uint8_t* p;
     int32_t off, i, room;
-    uint8_t flags = XR_DMA | XR_READ;
+    uint8_t flags = XR_DMA | (toA ? XR_WRITE : XR_READ);
     if (!cdl.enabled || !romCdl || count <= 0) return;
-    base = GetBasePointer(source);
-    if (!base || base < (uint8_t*) MAP_LAST) return;
-    off = romOffset(base + (source & 0xffff));
-    if (off < 0) return;
-    room = 0x10000 - (int32_t)(source & 0xffff);   /* DMA wraps inside the bank */
-    if (count > room) count = room;
-    for (i = 0; i < count; i++) markRom((uint32_t)(off + i), CDL_DATA, EXT_DMA_SOURCE);
     if (bAddress == 0x18 || bAddress == 0x19) flags |= XR_DMA_VRAM;
     else if (bAddress == 0x22) flags |= XR_DMA_CGRAM;
+    base = GetBasePointer(source);
+    if (!base || base < (uint8_t*) MAP_LAST) return;
+    p = base + (source & 0xffff);
+    room = 0x10000 - (int32_t)(source & 0xffff);   /* DMA wraps inside the bank */
+    if (count > room) count = room;
+
+    if (bAddress == 0x80 && !toA) {
+        uint32_t w = PPU.WRAM & 0x1FFFF;
+        CDL_WramMarkRange(w, count, WF_WRITE | WF_DMA);
+        if (wvals) for (i = 0; i < count; i++) seeValue((w + i) & 0x1FFFF, fixed ? p[0] : p[i]);
+    }
+    if (p >= Memory.RAM && p < Memory.RAM + WRAM_SIZE) {
+        uint32_t w = (uint32_t)(p - Memory.RAM);
+        CDL_WramMarkRange(w, fixed ? 1 : count, (toA ? WF_WRITE : WF_READ) | WF_DMA);
+        recordXref(SPACE_WRAM, w, flags);
+        return;
+    }
+    off = romOffset(p);
+    if (off < 0 || toA) return;
+    for (i = 0; i < (fixed ? 1 : count); i++) markRom((uint32_t)(off + i), CDL_DATA, EXT_DMA_SOURCE);
     recordXref(SPACE_ROM, (uint32_t)off, flags);
+}
+
+/* HDMA: table start (as an xref from pc 0), table bytes, transferred data. */
+void CDL_HdmaStart(uint32_t bus)
+{
+    uint8_t* base;
+    int32_t off;
+    if (!cdl.active || !romCdl) return;
+    base = GetBasePointer(bus);
+    if (!base || base < (uint8_t*) MAP_LAST) return;
+    off = romOffset(base + (bus & 0xffff));
+    if (off >= 0) tableOr(&xrefs, (1ULL << 63) | ((uint64_t)SPACE_ROM << 24) | (uint32_t)off, XR_DMA | XR_READ);
+}
+
+void CDL_HdmaBytes(const uint8_t* p, int32_t count)
+{
+    int32_t i, off;
+    if (!cdl.active || !romCdl || !p || count <= 0) return;
+    if (p >= Memory.RAM && p < Memory.RAM + WRAM_SIZE) {
+        CDL_WramMarkRange((uint32_t)(p - Memory.RAM), count, WF_READ | WF_DMA);
+        return;
+    }
+    off = romOffset(p);
+    if (off < 0) return;
+    for (i = 0; i < count; i++) markRom((uint32_t)(off + i), CDL_DATA, EXT_HDMA);
+}
+
+void CDL_HdmaBus(uint32_t bus, int32_t count)
+{
+    uint8_t* base;
+    if (!cdl.active || !romCdl) return;
+    base = GetBasePointer(bus);
+    if (!base || base < (uint8_t*) MAP_LAST) return;
+    CDL_HdmaBytes(base + (bus & 0xffff), count);
 }
 
 /* ------------------------------------------------------------------ */
@@ -258,6 +325,9 @@ void cdlDisable(void)
     tableFree(&xrefs); tableFree(&edges); tableFree(&stats);
     CDL_WramFree();
     CDL_CountFree();
+    CDL_FlowFree();
+    CDL_RegsFree();
+    CDL_SpcFree();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -272,7 +342,8 @@ int cdlEnable(void)
     wvals  = calloc(WRAM_SIZE * WVAL_BYTES, 1);
     if (!romCdl || !romExt || !wvals
         || !tableAlloc(&xrefs, 1 << 16, false) || !tableAlloc(&edges, 1 << 14, false)
-        || !tableAlloc(&stats, 1 << 15, true) || !CDL_WramAlloc() || !CDL_CountAlloc(romSize)) {
+        || !tableAlloc(&stats, 1 << 15, true) || !CDL_WramAlloc() || !CDL_CountAlloc(romSize)
+        || !CDL_FlowAlloc() || !CDL_RegsAlloc(romSize) || !CDL_SpcAlloc()) {
         cdlDisable();
         return 0;
     }
@@ -283,11 +354,13 @@ int cdlEnable(void)
     memset(recentVal, 0, sizeof(recentVal));
     cdl.havePrev = false;
     cdl.inInterrupt = false;
+    cdlDropped = 0;
     cdl.enabled = true;
     return 1;
 }
 
 EMSCRIPTEN_KEEPALIVE int      cdlIsEnabled(void)     { return cdl.enabled; }
+EMSCRIPTEN_KEEPALIVE uint32_t cdlDroppedCount(void)  { return cdlDropped; }
 EMSCRIPTEN_KEEPALIVE uint32_t cdlRomSize(void)       { return romSize; }
 EMSCRIPTEN_KEEPALIVE uint8_t* cdlRomPtr(void)        { return romCdl; }
 EMSCRIPTEN_KEEPALIVE uint8_t* cdlExtPtr(void)        { return romExt; }

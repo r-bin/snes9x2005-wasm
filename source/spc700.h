@@ -62,8 +62,11 @@ typedef struct
 /* Needed by ILLUSION OF GAIA */
 #define ONE_APU_CYCLE 21
 
+#include "cdl.h"   /* CDL_SPC_EXEC: SPC700 coverage (cdl-spc.c) */
+
 #define APU_EXECUTE1() \
 { \
+    CDL_SPC_EXEC((uint32_t)(IAPU.PC - IAPU.RAM)); \
     APU.Cycles += S9xAPUCycles [*IAPU.PC]; \
     (*S9xApuOpcodes[*IAPU.PC]) (); \
 }
