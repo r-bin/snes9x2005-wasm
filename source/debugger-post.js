@@ -80,8 +80,9 @@
  *   Module.cdlSeed(cdlBytes, extBytes, wflagBytes) - start from what the library already knows
  *   Module.cdlSetScriptContext(fetchRomOff, ptrWram, excludes[[lo, hi], ...])
  *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}],
- *                          wflags:[{index, data}], xrefs, edges, stats, scriptXrefs (Uint32Array) }
- *     Only what changed since the previous drain.
+ *                          wflags:[{index, data}], xrefs, edges, stats, scriptXrefs,
+ *                          romHits [off, n], wramHits [addr, reads, writes] (Uint32Array) }
+ *     Only what changed since the previous drain; hit counts are deltas (zeroed by the drain).
  *   Module.cdlView(peek) -> { cdl, ext, dirty, wflags, wdirty } live views for the display
  *     (dirty / wdirty = chunks changed since the last non-peek call; peek leaves them set).
  */
@@ -147,6 +148,8 @@
         out.scriptXrefs = drainList(Module._cdlDrainScriptXrefs, 3);
         out.edges = drainList(Module._cdlDrainEdges, 3);
         out.stats = drainList(Module._cdlDrainStats, 5);
+        out.romHits = typeof Module._cdlDrainRomHits === 'function' ? drainList(Module._cdlDrainRomHits, 2) : new Uint32Array(0);
+        out.wramHits = typeof Module._cdlDrainWramHits === 'function' ? drainList(Module._cdlDrainWramHits, 3) : new Uint32Array(0);
         return out;
     };
 

@@ -8,6 +8,7 @@
  *   - xrefs    : (instruction PC, accessed address, R/W + width) per data access
  *   - pcstats  : per (PC, space) access count + address range; caps xrefs per PC
  *   - wvals    : 256-bit "values seen" bitmap per WRAM byte (enum detection)
+ *   - hits     : execution / read counts per ROM byte, read / write counts per WRAM byte (cdl-count.c)
  * The host drains only what changed since the last drain (see cdl.c exports).
  */
 
@@ -94,6 +95,12 @@ void CDL_Exec(void);
 void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value);
 void CDL_Dma(uint8_t bAddress, uint32_t source, int32_t count);
 uint32_t* CDL_Out(uint32_t words);   /* shared drain buffer */
+
+/* cdl-count.c */
+bool CDL_CountAlloc(uint32_t romSize);
+void CDL_CountFree(void);
+void CDL_CountRom(uint32_t off);
+void CDL_CountWram(uint32_t addr, bool write);
 
 /* cdl-wram.c */
 bool CDL_WramAlloc(void);
