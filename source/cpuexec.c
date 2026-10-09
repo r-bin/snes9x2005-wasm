@@ -529,7 +529,12 @@ void S9xDoHBlankProcessing_SFX()
          S9xStartScreenRefresh();
       }
       if (CPU.V_Counter >= FIRST_VISIBLE_LINE && CPU.V_Counter < PPU.ScreenHeight + FIRST_VISIBLE_LINE)
+      {
          RenderLine(CPU.V_Counter - FIRST_VISIBLE_LINE);
+#ifdef SYNC_RENDER
+         S9xUpdateScreen();
+#endif
+      }
 #ifndef USE_BLARGG_APU
       if (APU.TimerEnabled [2])
       {
@@ -659,7 +664,12 @@ void S9xDoHBlankProcessing_NoSFX()
          S9xStartScreenRefresh();
       }
       if (CPU.V_Counter >= FIRST_VISIBLE_LINE && CPU.V_Counter < PPU.ScreenHeight + FIRST_VISIBLE_LINE)
+      {
          RenderLine(CPU.V_Counter - FIRST_VISIBLE_LINE);
+#ifdef SYNC_RENDER
+         S9xUpdateScreen();
+#endif
+      }
 #ifndef USE_BLARGG_APU
       if (APU.TimerEnabled [2])
       {

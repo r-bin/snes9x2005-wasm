@@ -229,7 +229,9 @@ void mainLoop(){
     if(!runGameFlag)return;
     if(dbg.paused)return;  /* debugger paused — skip frame advancement */
     S9xMainLoop();//1フレーム分実行される?
+#ifndef SYNC_RENDER
     S9xUpdateScreen();
+#endif
     #ifndef USE_BLARGG_APU
     S9xSoundCallback();
     #endif

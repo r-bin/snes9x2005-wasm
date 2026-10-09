@@ -224,6 +224,12 @@ extern char String [513];
 extern bool finishedFrame;
 #endif
 
+/* SYNC_RENDER: Toggle between scanline-synchronous rendering and batched async frame rendering.
+ * Define SYNC_RENDER to render line-by-line synchronously with CPU/PPU scanlines,
+ * preventing camera/scrolling seams and desync.
+ * Comment out / undefine SYNC_RENDER for batched asynchronous frame rendering. */
+#define SYNC_RENDER
+
 void S9xSetPause(uint32_t mask);
 void S9xClearPause(uint32_t mask);
 #endif
