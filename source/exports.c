@@ -254,6 +254,58 @@ uint8_t *getPpuView(void){
     return view;
 }
 
+/* The sound chip as the Everscript extension's Music tab reads it each frame
+ * (everscript-vscode src/music/README.md). Read after mainLoop(): the APU has
+ * caught up to the end of the frame.
+ *   +0   u32     ARAM address in the wasm heap (64 KB)
+ *   +4   u16     PC     +6 A  +7 X  +8 Y  +9 PSW  +10 SP  +11 $F1 control
+ *   +12  u8[4]   ports the SPC reads at $F4-$F7 (the CPU wrote them at $2140-$2143)
+ *   +16  u8[4]   ports the SPC wrote at $F4-$F7 (the CPU reads them at $2140-$2143)
+ *   +20  u8[3]   timer targets $FA-$FC   +23 u8 timers enabled (bits 0-2)
+ *   +24  u8      1 while the IPL ROM is mapped at $FFC0
+ *   +25  u8      keyed voices (bit per voice, the APU's own KeyedChannels)
+ *   +32  u8[128] DSP registers. ENVX ($x8) and OUTX ($x9) are filled from the
+ *                mixer's voices, as an SPC700 read of them would return
+ *   +160 u8[64]  the RAM under the IPL ROM ($FFC0-$FFFF) */
+EMSCRIPTEN_KEEPALIVE
+uint8_t *getApuView(void){
+    static uint8_t view[224];
+    uint32_t ram = (uint32_t)(uintptr_t)IAPU.RAM;
+    uint16_t pc = (uint16_t)(IAPU.PC - IAPU.RAM);
+    int i;
+    S9xAPUPackStatus();
+    memcpy(view, &ram, 4);
+    view[4] = (uint8_t)pc;
+    view[5] = (uint8_t)(pc >> 8);
+    view[6] = IAPU.Registers.YA.B.A;
+    view[7] = IAPU.Registers.X;
+    view[8] = IAPU.Registers.YA.B.Y;
+    view[9] = IAPU.Registers.P;
+    view[10] = IAPU.Registers.S;
+    view[11] = IAPU.RAM[0xF1];
+    for(i = 0; i < 4; i++){
+        view[12 + i] = IAPU.RAM[0xF4 + i];
+        view[16 + i] = APU.OutPorts[i];
+    }
+    view[23] = 0;
+    for(i = 0; i < 3; i++){
+        view[20 + i] = (uint8_t)APU.TimerTarget[i];
+        if(APU.TimerEnabled[i]) view[23] |= 1 << i;
+    }
+    view[24] = APU.ShowROM ? 1 : 0;
+    view[25] = APU.KeyedChannels;
+    memcpy(view + 32, APU.DSP, 128);
+    for(i = 0; i < 8; i++){
+        int32_t e = SoundData.channels[i].envx;
+        int32_t smp = SoundData.channels[i].sample;
+        bool silent = SoundData.channels[i].state == SOUND_SILENT;
+        view[32 + i * 16 + 8] = (uint8_t)(e > 0x7F ? 0x7F : (e < 0 ? 0 : e));
+        view[32 + i * 16 + 9] = silent ? 0 : (uint8_t)((smp >> 8) | (smp & 0xFF));
+    }
+    memcpy(view + 160, APU.ExtraRAM, 64);
+    return view;
+}
+
 EMSCRIPTEN_KEEPALIVE
 uint8_t *getScreenBuffer(void){
     if(!rgba8ScreenBuffer)rgba8ScreenBuffer = my_malloc(512 * 448 * 4);
