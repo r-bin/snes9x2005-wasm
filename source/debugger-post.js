@@ -39,6 +39,16 @@
         return new Uint8Array(HEAPU8.buffer, bytePtr, cap).slice();
     };
 
+    /**
+     * readSpace(space) — a live view (not a copy) of VRAM (0), CGRAM (1), OAM (2), SRAM (3)
+     * or ARAM (4); null when unknown. Use it at once: the heap can move.
+     */
+    Module['readSpace'] = function (space) {
+        var ptr = Module._getSpacePtr(space | 0);
+        var len = Module._getSpaceSize(space | 0);
+        return ptr && len ? new Uint8Array(HEAPU8.buffer, ptr, len) : null;
+    };
+
     /* Convenience aliases — identical to calling Module._xxx() directly,
      * but using camelCase names that match the spec. */
     Module['addExecBreakpoint']    = function (addr)  { Module._addExecBreakpoint(addr >>> 0);    };

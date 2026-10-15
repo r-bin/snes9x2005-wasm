@@ -314,6 +314,34 @@ uint8_t *getApuView(void){
     return view;
 }
 
+/* The memory spaces a movie checksums besides WRAM (tas/movie.js). Pointer into the
+ * wasm heap, read at once: 0 VRAM (64 KB), 1 CGRAM (512), 2 OAM (544), 3 SRAM (the
+ * cartridge's size), 4 ARAM (64 KB). NULL for an unknown space. */
+EMSCRIPTEN_KEEPALIVE
+uint8_t *getSpacePtr(int32_t space){
+    if(!runGameFlag) return NULL;
+    switch(space){
+        case 0: return Memory.VRAM;
+        case 1: return (uint8_t*)PPU.CGDATA;
+        case 2: return PPU.OAMData;
+        case 3: return Memory.SRAM;
+        case 4: return IAPU.RAM;
+    }
+    return NULL;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint32_t getSpaceSize(int32_t space){
+    switch(space){
+        case 0: return 0x10000;
+        case 1: return 512;
+        case 2: return 512 + 32;
+        case 3: return Memory.SRAMSize ? (1u << Memory.SRAMSize) * 1024u : 0;
+        case 4: return 0x10000;
+    }
+    return 0;
+}
+
 EMSCRIPTEN_KEEPALIVE
 uint8_t *getScreenBuffer(void){
     if(!rgba8ScreenBuffer)rgba8ScreenBuffer = my_malloc(512 * 448 * 4);
