@@ -84,6 +84,8 @@
  *                          romHits [off, n], wramHits [addr, reads, writes],
  *                          rets [entry, retPc, mx<<8|flags], regs [pc, kind<<16|value],
  *                          bases [pc, base24, flags] (Uint32Array),
+ *                          busSites [formIdx<<24|pc, flags, lo, hi], romCycles [off, cycles] (delta),
+ *                          bus:[{index, data}] (64 KB: exec form bits low nibble, read form bits high nibble),
  *                          wcode:[{index, code, state}] (4 KB), aram:[{index, data}] (4 KB), dropped }
  *     Only what changed since the previous drain; hit counts are deltas (zeroed by the drain).
  *   Module.cdlView(peek) -> { cdl, ext, dirty, wflags, wdirty } live views for the display
@@ -157,6 +159,17 @@
         out.rets = opt('_cdlDrainRets', 3);
         out.regs = opt('_cdlDrainRegs', 2);
         out.bases = opt('_cdlDrainBases', 3);
+        out.busSites = opt('_cdlDrainBusSites', 4);
+        out.romCycles = opt('_cdlDrainRomCycles', 2);
+        out.bus = [];
+        if (typeof Module._cdlBusPtr === 'function' && Module._cdlBusPtr()) {
+            var bd = Module._cdlBusDirtyPtr(), bp = Module._cdlBusPtr();
+            for (var b = 0; b * CHUNK < size; b++) {
+                if (!HEAPU8[bd + b]) continue;
+                HEAPU8[bd + b] = 0;
+                out.bus.push({ index: b, data: copy(bp + b * CHUNK, Math.min(CHUNK, size - b * CHUNK)) });
+            }
+        }
         out.wcode = [];
         if (typeof Module._cdlWcodeDirtyPtr === 'function') {
             var cd = Module._cdlWcodeDirtyPtr(), cp = Module._cdlWcodePtr(), cs = Module._cdlWcodeStatePtr();

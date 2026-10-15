@@ -13,6 +13,8 @@
  *   - regs     : DB / D per instruction, pointer bases + Y of indirect accesses (cdl-regs.c)
  *   - wcode    : bytes of code executed from WRAM, and whether they changed (cdl-wram.c)
  *   - aram     : SPC700 exec / operand / read / write per ARAM byte (cdl-spc.c)
+ *   - bus      : which mirror ($C0 / $80 / $00 / $40 banks) executed or read each ROM byte (cdl-bus.c)
+ *   - cycles   : master cycles spent per ROM opcode head, as deltas (cdl-count.c)
  * The host drains only what changed since the last drain (see cdl.c exports).
  */
 
@@ -114,6 +116,7 @@ typedef struct {
     uint32_t curLen;
     uint32_t lastRomRead;
     uint32_t lastRomReadSeq;
+    uint32_t lastCycles;   /* CPU.Cycles at the previous instruction, for per-instruction cycle counts */
 } CDLState;
 
 extern CDLState cdl;
@@ -151,6 +154,13 @@ bool CDL_CountAlloc(uint32_t romSize);
 void CDL_CountFree(void);
 void CDL_CountRom(uint32_t off);
 void CDL_CountWram(uint32_t addr, bool write);
+void CDL_CountCycles(uint32_t off, uint32_t cycles);
+
+/* cdl-bus.c */
+bool CDL_BusAlloc(uint32_t romSize);
+void CDL_BusFree(void);
+void CDL_BusExec(uint32_t off, uint32_t len, uint32_t pc);
+void CDL_BusData(uint32_t off, uint32_t width, uint32_t bus, uint32_t pc, uint8_t flags);
 
 /* cdl-wram.c */
 bool CDL_WramAlloc(void);

@@ -86,6 +86,13 @@ void CDL_Exec(void)
     int32_t  off = romOffset(p);
     uint8_t  entry = 0;
 
+    {   /* cycles of the previous instruction = gap between the two CPU.Cycles readings */
+        int32_t dc = (int32_t)CPU.Cycles - (int32_t)cdl.lastCycles;
+        if (dc < 0) dc += Settings.H_Max;          /* the counter wraps at the end of a scanline */
+        if (cdl.havePrev && cdl.curRomOff >= 0 && dc > 0 && dc < 100000) CDL_CountCycles((uint32_t)cdl.curRomOff, (uint32_t)dc);
+        cdl.lastCycles = CPU.Cycles;
+    }
+
     if (cdl.inInterrupt) {
         recordEdge(0, pc, FLOW_INTERRUPT);
         entry = CDL_SUB_ENTRY;
@@ -113,6 +120,7 @@ void CDL_Exec(void)
                 EXT_OPCODE_HEAD | (m8 ? 0 : EXT_SEEN_M16) | (x8 ? 0 : EXT_SEEN_X16));
         for (i = 1; i < len; i++) markRom((uint32_t)off + i, CDL_CODE, 0);
         CDL_CountRom((uint32_t)off);
+        CDL_BusExec((uint32_t)off, len, pc);
         cdl.curLen = len;
     }
     cdl.curRomOff = off;
@@ -200,6 +208,7 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
                 uint8_t e = ((flags & XR_POINTER) ? EXT_POINTER : 0) | (width == 2 ? EXT_DATA_WORD : 0);
                 markRom(addr, CDL_DATA, e);
                 CDL_CountRom(addr);
+                CDL_BusData(addr, width, address, cdl.curPC, flags);
                 if (width == 2) markRom(addr + 1, CDL_DATA, e & EXT_POINTER);
                 cdl.lastRomRead = addr + width - 1;
                 cdl.lastRomReadSeq = cdl.seq;
@@ -258,6 +267,7 @@ void CDL_Dma(uint8_t bAddress, uint32_t source, int32_t count, bool toA, bool fi
     off = romOffset(p);
     if (off < 0 || toA) return;
     for (i = 0; i < (fixed ? 1 : count); i++) markRom((uint32_t)(off + i), CDL_DATA, EXT_DMA_SOURCE);
+    CDL_BusData((uint32_t)off, fixed ? 1 : (uint32_t)count, source, cdl.curPC, XR_DMA | XR_READ);
     recordXref(SPACE_ROM, (uint32_t)off, flags);
 }
 
@@ -328,6 +338,7 @@ void cdlDisable(void)
     CDL_FlowFree();
     CDL_RegsFree();
     CDL_SpcFree();
+    CDL_BusFree();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -343,7 +354,7 @@ int cdlEnable(void)
     if (!romCdl || !romExt || !wvals
         || !tableAlloc(&xrefs, 1 << 16, false) || !tableAlloc(&edges, 1 << 14, false)
         || !tableAlloc(&stats, 1 << 15, true) || !CDL_WramAlloc() || !CDL_CountAlloc(romSize)
-        || !CDL_FlowAlloc() || !CDL_RegsAlloc(romSize) || !CDL_SpcAlloc()) {
+        || !CDL_FlowAlloc() || !CDL_RegsAlloc(romSize) || !CDL_SpcAlloc() || !CDL_BusAlloc(romSize)) {
         cdlDisable();
         return 0;
     }
@@ -354,6 +365,7 @@ int cdlEnable(void)
     memset(recentVal, 0, sizeof(recentVal));
     cdl.havePrev = false;
     cdl.inInterrupt = false;
+    cdl.lastCycles = CPU.Cycles;
     cdlDropped = 0;
     cdl.enabled = true;
     return 1;
