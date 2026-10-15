@@ -162,6 +162,13 @@ void CDL_BusFree(void);
 void CDL_BusExec(uint32_t off, uint32_t len, uint32_t pc);
 void CDL_BusData(uint32_t off, uint32_t width, uint32_t bus, uint32_t pc, uint8_t flags);
 
+/* cdl-values.c */
+bool CDL_ValuesAlloc(void);
+void CDL_ValuesFree(void);
+void CDL_IoValue(uint32_t reg, uint8_t v);
+void CDL_SramAccess(uint32_t off, uint8_t flags, uint32_t width);
+void CDL_WordValue(uint32_t addr, uint16_t v);
+
 /* cdl-wram.c */
 bool CDL_WramAlloc(void);
 void CDL_WramFree(void);

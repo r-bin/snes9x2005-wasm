@@ -198,6 +198,7 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
             if ((flags & XR_WRITE) && wvals) {
                 seeValue(addr, (uint8_t)value);
                 if (width == 2 && addr + 1 < WRAM_SIZE) seeValue(addr + 1, (uint8_t)(value >> 8));
+                if (width == 2) CDL_WordValue(addr, value);
             }
         } else if (off >= 0) {
             /* some opcodes fetch their own operand through the bus: not data */
@@ -220,6 +221,10 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
     } else if ((intptr_t) block == MAP_PPU || (intptr_t) block == MAP_CPU || (intptr_t) block == MAP_DSP) {
         space = SPACE_IO;
         addr  = address & 0xFFFF;
+        if (flags & XR_WRITE) {
+            CDL_IoValue(addr, (uint8_t)value);
+            if (width == 2) CDL_IoValue(addr + 1, (uint8_t)(value >> 8));
+        }
         if ((flags & XR_WRITE) && addr >= 0x2140 && addr <= 0x2143 && cdl.seq - cdl.lastRomReadSeq <= 4)
             markRom(cdl.lastRomRead, 0, EXT_APU_SOURCE);
         if (addr == 0x2180) {                       /* WMDATA: the WRAM byte at $2181-3 */
@@ -229,6 +234,14 @@ void CDL_Access(uint32_t address, uint8_t* block, uint8_t flags, uint16_t value)
             CDL_CountWram(w, (flags & XR_WRITE) != 0);
             if ((flags & XR_WRITE) && wvals) seeValue(w, (uint8_t)value);
         }
+    } else if ((intptr_t) block == MAP_HIROM_SRAM || (intptr_t) block == MAP_RONLY_SRAM || (intptr_t) block == MAP_LOROM_SRAM) {
+        /* the cartridge save RAM: which bytes the game reads and writes (the BW-RAM map of an SA-1 port) */
+        uint32_t o = (intptr_t) block == MAP_LOROM_SRAM
+            ? (((address & 0xFF0000) >> 1) | (address & 0x7FFF)) & Memory.SRAMMask
+            : ((address & 0x7fff) - 0x6000 + ((address & 0xf0000) >> 3)) & Memory.SRAMMask;
+        space = SPACE_BUS;
+        addr  = address & 0xFFFFFF;
+        CDL_SramAccess(o, flags, width);
     } else {
         space = SPACE_BUS;
         addr  = address & 0xFFFFFF;
@@ -339,6 +352,7 @@ void cdlDisable(void)
     CDL_RegsFree();
     CDL_SpcFree();
     CDL_BusFree();
+    CDL_ValuesFree();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -354,7 +368,8 @@ int cdlEnable(void)
     if (!romCdl || !romExt || !wvals
         || !tableAlloc(&xrefs, 1 << 16, false) || !tableAlloc(&edges, 1 << 14, false)
         || !tableAlloc(&stats, 1 << 15, true) || !CDL_WramAlloc() || !CDL_CountAlloc(romSize)
-        || !CDL_FlowAlloc() || !CDL_RegsAlloc(romSize) || !CDL_SpcAlloc() || !CDL_BusAlloc(romSize)) {
+        || !CDL_FlowAlloc() || !CDL_RegsAlloc(romSize) || !CDL_SpcAlloc() || !CDL_BusAlloc(romSize)
+        || !CDL_ValuesAlloc()) {
         cdlDisable();
         return 0;
     }

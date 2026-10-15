@@ -89,7 +89,8 @@
  *   Module.cdlEnable() / cdlDisable() / cdlIsEnabled()
  *   Module.cdlSeed(cdlBytes, extBytes, wflagBytes) - start from what the library already knows
  *   Module.cdlSetScriptContext(fetchRomOff, ptrWram, excludes[[lo, hi], ...])
- *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}],
+ *   Module._cdlSetValueSet(0|1)  which word-range set CPU stores go to (0 natural, 1 while a cheat/tool wrote memory recently)
+ *   Module.cdlDrain() -> { size, chunks:[{index, cdl, ext}], wvals:[{index, data}], ioVals, sramFlags, wordRanges,
  *                          wflags:[{index, data}], xrefs, edges, stats, scriptXrefs,
  *                          romHits [off, n], wramHits [addr, reads, writes],
  *                          rets [entry, retPc, mx<<8|flags], regs [pc, kind<<16|value],
@@ -196,6 +197,27 @@
                 if (!HEAPU8[ad + q]) continue;
                 HEAPU8[ad + q] = 0;
                 out.aram.push({ index: q, data: copy(ap + q * 4096, 4096) });
+            }
+        }
+        out.ioVals = [];
+        if (typeof Module._cdlIoValPtr === 'function' && Module._cdlIoValPtr()) {
+            var iod = Module._cdlIoValDirtyPtr();
+            if (HEAPU8[iod]) { HEAPU8[iod] = 0; out.ioVals.push({ index: 0, data: copy(Module._cdlIoValPtr(), 640 * 32) }); }
+            var sd = Module._cdlSramFlagDirtyPtr(), sp = Module._cdlSramFlagPtr();
+            out.sramFlags = [];
+            for (var sc = 0; sc < 32; sc++) {
+                if (!HEAPU8[sd + sc]) continue;
+                HEAPU8[sd + sc] = 0;
+                out.sramFlags.push({ index: sc, data: copy(sp + sc * 4096, 4096) });
+            }
+            out.wordRanges = [];
+            for (var set = 0; set < 2; set++) {
+                var rd = Module._cdlWordRangeDirtyPtr(set), rp = Module._cdlWordRangePtr(set);
+                for (var rc = 0; rc < 512; rc++) {
+                    if (!HEAPU8[rd + rc]) continue;
+                    HEAPU8[rd + rc] = 0;
+                    out.wordRanges.push({ set: set, index: rc, data: copy(rp + rc * 256 * 40, 256 * 40) });
+                }
             }
         }
         out.dropped = typeof Module._cdlDroppedCount === 'function' ? Module._cdlDroppedCount() : 0;
