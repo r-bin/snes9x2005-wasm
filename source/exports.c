@@ -55,6 +55,14 @@ int takeInputPolled(void){
     evsInputPolled = false;
     return polled;
 }
+
+/* The console's reset button: CPU, PPU and APU restart, WRAM and SRAM are kept.
+ * Recorded in a movie as `R|soft` and replayed with this same call. */
+EMSCRIPTEN_KEEPALIVE
+void softReset(void){
+    if(!runGameFlag) return;
+    S9xSoftReset();
+}
 #endif
 
 uint32_t S9xReadJoypad(int32_t port){
